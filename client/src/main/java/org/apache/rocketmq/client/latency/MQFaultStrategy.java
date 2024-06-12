@@ -23,10 +23,24 @@ import org.apache.rocketmq.client.impl.producer.TopicPublishInfo.QueueFilter;
 import org.apache.rocketmq.common.message.MessageQueue;
 
 public class MQFaultStrategy {
+    /**
+     * 延迟故障容错，维护每个Broker的发送消息的延迟
+     * key：brokerName
+     */
     private LatencyFaultTolerance<String> latencyFaultTolerance;
+    /**
+     * 发送消息延迟容错开关（默认关闭）
+     */
     private volatile boolean sendLatencyFaultEnable;
     private volatile boolean startDetectorEnable;
+    // 其实感觉这里设计的不好，为啥直接latencyMax和notAvailableDuration一一对应
+    /**
+     * 延迟级别数组（这里是发送消息的时长，单位ms）
+     */
     private long[] latencyMax = {50L, 100L, 550L, 1800L, 3000L, 5000L, 15000L};
+    /**
+     * 不可用时长数组（这里是broker的不可用时长，单位ms）
+     */
     private long[] notAvailableDuration = {0L, 0L, 2000L, 5000L, 6000L, 10000L, 30000L};
 
     public static class BrokerFilter implements QueueFilter {
@@ -134,6 +148,9 @@ public class MQFaultStrategy {
         this.latencyFaultTolerance.shutdown();
     }
 
+    /**
+     * 通过 topic 信息返回1个存放消息的 消息队列
+     */
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName, final boolean resetIndex) {
         BrokerFilter brokerFilter = threadBrokerFilter.get();
         brokerFilter.setLastBrokerName(lastBrokerName);
@@ -141,6 +158,7 @@ public class MQFaultStrategy {
             if (resetIndex) {
                 tpInfo.resetIndex();
             }
+            // 内部使用轮询算法
             MessageQueue mq = tpInfo.selectOneMessageQueue(availableFilter, brokerFilter);
             if (mq != null) {
                 return mq;
@@ -161,6 +179,9 @@ public class MQFaultStrategy {
         return tpInfo.selectOneMessageQueue();
     }
 
+    /**
+     * 更新故障项
+     */
     public void updateFaultItem(final String brokerName, final long currentLatency, boolean isolation,
                                 final boolean reachable) {
         if (this.sendLatencyFaultEnable) {
@@ -169,6 +190,9 @@ public class MQFaultStrategy {
         }
     }
 
+    /**
+     * 计算延迟对应的不可用时间
+     */
     private long computeNotAvailableDuration(final long currentLatency) {
         for (int i = latencyMax.length - 1; i >= 0; i--) {
             if (currentLatency >= latencyMax[i]) {

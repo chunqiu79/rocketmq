@@ -17,6 +17,9 @@
 
 package org.apache.rocketmq.client.latency;
 
+/**
+ * 延迟故障容错接口
+ */
 public interface LatencyFaultTolerance<T> {
     /**
      * Update brokers' states, to decide if they are good or not.
@@ -27,6 +30,9 @@ public interface LatencyFaultTolerance<T> {
      * spends such time.
      * @param reachable To decide if this broker is reachable or not.
      */
+    /**
+     * 更新对应的延迟和不可用时长
+     */
     void updateFaultItem(final T name, final long currentLatency, final long notAvailableDuration,
                          final boolean reachable);
 
@@ -36,6 +42,9 @@ public interface LatencyFaultTolerance<T> {
      * @param name Broker's name.
      * @return boolean variable, if this is true, then the broker is available.
      */
+    /**
+     * 对象是否可用
+     */
     boolean isAvailable(final T name);
 
     /**
@@ -44,6 +53,11 @@ public interface LatencyFaultTolerance<T> {
      * @param name Broker's name.
      * @return boolean variable, if this is true, then the broker is reachable.
      */
+    /**
+     * 对象是否可达
+     * @param name
+     * @return
+     */
     boolean isReachable(final T name);
 
     /**
@@ -51,12 +65,18 @@ public interface LatencyFaultTolerance<T> {
      *
      * @param name broker's name.
      */
+    /**
+     * 删除对象
+     */
     void remove(final T name);
 
     /**
      * The worst situation, no broker can be available. Then choose random one.
      *
      * @return A random mq will be returned.
+     */
+    /**
+     * 获取对象
      */
     T pickOneAtLeast();
 

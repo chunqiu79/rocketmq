@@ -33,9 +33,15 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 
 public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> {
     private final static Logger log = LoggerFactory.getLogger(MQFaultStrategy.class);
+    /**
+     * 对象故障信息 map
+     */
     private final ConcurrentHashMap<String, FaultItem> faultItemTable = new ConcurrentHashMap<String, FaultItem>(16);
     private int detectTimeout = 200;
     private int detectInterval = 2000;
+    /**
+     * 对象选择 index
+     */
     private final ThreadLocalIndex whichItemWorst = new ThreadLocalIndex();
 
     private volatile boolean startDetectorEnable = false;

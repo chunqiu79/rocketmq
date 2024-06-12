@@ -30,7 +30,7 @@ public class Producer {
     /**
      * The number of produced messages.
      */
-    public static final int MESSAGE_COUNT = 1000;
+    public static final int MESSAGE_COUNT = 2;
     public static final String PRODUCER_GROUP = "please_rename_unique_group_name";
     public static final String DEFAULT_NAMESRVADDR = "127.0.0.1:9876";
     public static final String TOPIC = "TopicTest";
@@ -54,7 +54,9 @@ public class Producer {
          * </pre>
          */
         // Uncomment the following line while debugging, namesrvAddr should be set to your local address
-        // producer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
+
+        // 指定namesrv地址
+        producer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
 
         /*
          * Launch the instance.

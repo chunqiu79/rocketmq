@@ -16,12 +16,14 @@
  */
 package org.apache.rocketmq.common.topic;
 
+import org.apache.rocketmq.common.UtilAll;
+
 import java.util.HashSet;
 import java.util.Set;
-import org.apache.rocketmq.common.UtilAll;
 
 public class TopicValidator {
 
+    // 默认的 topic，只有 broker 配置了 autoCreateTopicEnable 为 true 时，才会创建这个默认的 topic
     public static final String AUTO_CREATE_TOPIC_KEY_TOPIC = "TBW102"; // Will be created at broker when isAutoCreateTopicEnable
     public static final String RMQ_SYS_SCHEDULE_TOPIC = "SCHEDULE_TOPIC_XXXX";
     public static final String RMQ_SYS_BENCHMARK_TOPIC = "BenchmarkTest";

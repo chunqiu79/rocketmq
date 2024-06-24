@@ -214,6 +214,8 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 BrokerMetricsManager.sendToDlqMessages.add(1, attributes);
 
                 properties.put(MessageConst.PROPERTY_DELAY_TIME_LEVEL, "-1");
+                // topic 名字变成了 "%DLQ%" + producerGroupName
+                // 也就是说私信队列是以 producerGroup 为单位的，和普通队列不一样
                 newTopic = MixAll.getDLQTopic(groupName);
                 int queueIdInt = randomQueueId(DLQ_NUMS_PER_GROUP);
                 topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(newTopic,
@@ -257,15 +259,18 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         int queueIdInt = requestHeader.getQueueId();
         TopicConfig topicConfig = this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
 
+        // 如果没有指定 queueId ，就是随机指定一个
         if (queueIdInt < 0) {
             queueIdInt = randomQueueId(topicConfig.getWriteQueueNums());
         }
 
+        // 构建 broker 内部使用的 message
         MessageExtBrokerInner msgInner = new MessageExtBrokerInner();
         msgInner.setTopic(requestHeader.getTopic());
         msgInner.setQueueId(queueIdInt);
 
         Map<String, String> oriProps = MessageDecoder.string2messageProperties(requestHeader.getProperties());
+        // 如果是消费消息的（也就是以"%RETRY%"开头的） topic 重试次数大于 maxReconsumeTimes（消费最大重试次数）的时候，消息就进入死信队列
         if (!handleRetryAndDLQ(requestHeader, response, request, msgInner, topicConfig, oriProps)) {
             return response;
         }
@@ -279,6 +284,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             oriProps.put(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, uniqKey);
         }
 
+        // msg 的扩展属性字段，包含：uniqKey，keys，tags等
         MessageAccessor.setProperties(msgInner, oriProps);
 
         CleanupPolicy cleanupPolicy = CleanupPolicyUtils.getDeletePolicy(Optional.of(topicConfig));
@@ -301,6 +307,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         msgInner.setPropertiesString(MessageDecoder.messageProperties2String(msgInner.getProperties()));
 
         // Map<String, String> oriProps = MessageDecoder.string2messageProperties(requestHeader.getProperties());
+        // 事务消息标识
         String traFlag = oriProps.get(MessageConst.PROPERTY_TRANSACTION_PREPARED);
         boolean sendTransactionPrepareMessage;
         if (Boolean.parseBoolean(traFlag)
@@ -349,8 +356,10 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         } else {
             PutMessageResult putMessageResult = null;
             if (sendTransactionPrepareMessage) {
+                // 处理事务消息的 prepare 消息
                 putMessageResult = this.brokerController.getTransactionalMessageService().prepareMessage(msgInner);
             } else {
+                // 处理普通消息和事务消息的 commit/rollback 消息
                 putMessageResult = this.brokerController.getMessageStore().putMessage(msgInner);
             }
             handlePutMessageResult(putMessageResult, response, request, msgInner, responseHeader, sendMessageContext, ctx, queueIdInt, beginTimeMillis, mappingContext, BrokerMetricsManager.getMessageType(requestHeader));
@@ -676,6 +685,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         SendMessageRequestHeader requestHeader) {
         final RemotingCommand response = RemotingCommand.createResponseCommand(SendMessageResponseHeader.class);
 
+        // 表示rpc的唯一标识，用于和客户端进行1对1对应，标识请求的唯一性
         response.setOpaque(request.getOpaque());
 
         response.addExtField(MessageConst.PROPERTY_MSG_REGION, this.brokerController.getBrokerConfig().getRegionId());

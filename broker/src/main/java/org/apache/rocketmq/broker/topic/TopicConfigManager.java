@@ -16,28 +16,12 @@
  */
 package org.apache.rocketmq.broker.topic;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-
 import com.google.common.collect.ImmutableMap;
-
 import com.google.common.collect.Maps;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.broker.BrokerController;
 import org.apache.rocketmq.broker.BrokerPathConfigHelper;
-import org.apache.rocketmq.common.ConfigManager;
-import org.apache.rocketmq.common.MixAll;
-import org.apache.rocketmq.common.PopAckConstants;
-import org.apache.rocketmq.common.TopicAttributes;
-import org.apache.rocketmq.common.TopicConfig;
+import org.apache.rocketmq.common.*;
 import org.apache.rocketmq.common.attribute.Attribute;
 import org.apache.rocketmq.common.attribute.AttributeUtil;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -51,6 +35,17 @@ import org.apache.rocketmq.remoting.protocol.body.KVTable;
 import org.apache.rocketmq.remoting.protocol.body.TopicConfigAndMappingSerializeWrapper;
 import org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper;
 import org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo;
+
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -238,6 +233,8 @@ public class TopicConfigManager extends ConfigManager {
                         return topicConfig;
                     }
 
+                    // topic 没有创建 && broker 配置了 autoCreateTopicEnable 为 true
+                    // 根据默认的 topic 的 config 来生成新的 topicConfig
                     TopicConfig defaultTopicConfig = getTopicConfig(defaultTopic);
                     if (defaultTopicConfig != null) {
                         if (defaultTopic.equals(TopicValidator.AUTO_CREATE_TOPIC_KEY_TOPIC)) {
@@ -293,6 +290,7 @@ public class TopicConfigManager extends ConfigManager {
         }
 
         if (createNew) {
+            // 向 nameserver 注册 topic 信息
             registerBrokerData(topicConfig);
         }
 

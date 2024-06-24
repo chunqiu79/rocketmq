@@ -16,13 +16,6 @@
  */
 package org.apache.rocketmq.client.producer;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.ExecutorService;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.QueryResult;
 import org.apache.rocketmq.client.Validators;
@@ -36,18 +29,17 @@ import org.apache.rocketmq.client.trace.TraceDispatcher;
 import org.apache.rocketmq.client.trace.hook.EndTransactionTraceHookImpl;
 import org.apache.rocketmq.client.trace.hook.SendMessageTraceHookImpl;
 import org.apache.rocketmq.common.MixAll;
-import org.apache.rocketmq.common.message.Message;
-import org.apache.rocketmq.common.message.MessageBatch;
-import org.apache.rocketmq.common.message.MessageClientIDSetter;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.common.message.*;
 import org.apache.rocketmq.common.topic.TopicValidator;
+import org.apache.rocketmq.logging.org.slf4j.Logger;
+import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
-import org.apache.rocketmq.logging.org.slf4j.Logger;
-import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutorService;
 
 /**
  * This class is the entry point for applications intending to send messages. </p>
@@ -85,31 +77,37 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * <p>
      * See <a href="https://rocketmq.apache.org/docs/introduction/02concepts">core concepts</a> for more discussion.
      */
+    // 生产者组名
     private String producerGroup;
 
     /**
      * Topics that need to be initialized for transaction producer
      */
+    // 主题
     private List<String> topics;
 
     /**
      * Just for testing or demo program
      */
+    //
     private String createTopicKey = TopicValidator.AUTO_CREATE_TOPIC_KEY_TOPIC;
 
     /**
      * Number of queues to create per default topic.
      */
+    // 每个topic默认分配的队列数
     private volatile int defaultTopicQueueNums = 4;
 
     /**
      * Timeout for sending messages.
      */
+    // 消费发送超时时间
     private int sendMsgTimeout = 3000;
 
     /**
      * Compress message body threshold, namely, message body larger than 4k will be compressed on default.
      */
+    // 当消息数据达到 compressMsgBodyOverHowmuch 之后对消息进行压缩
     private int compressMsgBodyOverHowmuch = 1024 * 4;
 
     /**
@@ -117,6 +115,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * <p>
      * This may potentially cause message duplication which is up to application developers to resolve.
      */
+    // 同步重试次数（不包含本身发送的第一次）
     private int retryTimesWhenSendFailed = 2;
 
     /**
@@ -124,6 +123,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * <p>
      * This may potentially cause message duplication which is up to application developers to resolve.
      */
+    // 异步重试次数（不包含本身发送的第一次）
     private int retryTimesWhenSendAsyncFailed = 2;
 
     /**
@@ -134,6 +134,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     /**
      * Maximum allowed message body size in bytes.
      */
+    // 最大消息大小为 maxMessageSize
     private int maxMessageSize = 1024 * 1024 * 4; // 4M
 
     /**

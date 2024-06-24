@@ -16,20 +16,12 @@
  */
 package org.apache.rocketmq.broker.util;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.rocketmq.broker.BrokerController;
 import org.apache.rocketmq.broker.schedule.ScheduleMessageService;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.TopicConfig;
 import org.apache.rocketmq.common.constant.LoggerName;
-import org.apache.rocketmq.common.message.MessageAccessor;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageDecoder;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.common.message.MessageExtBrokerInner;
+import org.apache.rocketmq.common.message.*;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.topic.TopicValidator;
 import org.apache.rocketmq.common.utils.QueueTypeUtils;
@@ -39,6 +31,11 @@ import org.apache.rocketmq.store.PutMessageResult;
 import org.apache.rocketmq.store.PutMessageStatus;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.timer.TimerMessageStore;
+
+import java.util.Iterator;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class HookUtils {
 
@@ -63,6 +60,7 @@ public class HookUtils {
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
 
+        // （duplicationEnable 为 false && broker 为 slave） 不处理客户端发送的消息
         if (!brokerController.getMessageStoreConfig().isDuplicationEnable() && BrokerRole.SLAVE == brokerController.getMessageStoreConfig().getBrokerRole()) {
             long value = PRINT_TIMES.getAndIncrement();
             if ((value % 50000) == 0) {
@@ -72,6 +70,7 @@ public class HookUtils {
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
 
+        // broker 不可以写也不处理客户端发送的消息
         if (!brokerController.getMessageStore().getRunningFlags().isWriteable()) {
             long value = PRINT_TIMES.getAndIncrement();
             if ((value % 50000) == 0) {
@@ -85,12 +84,15 @@ public class HookUtils {
 
         final byte[] topicData = msg.getTopic().getBytes(MessageDecoder.CHARSET_UTF8);
         boolean retryTopic = msg.getTopic() != null && msg.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX);
+        // retryTopic 标识是否是 重试的topic
+        // （不是重试的 topic && topic 长度大于 最大范围）不处理
         if (!retryTopic && topicData.length > Byte.MAX_VALUE) {
             LOG.warn("putMessage message topic[{}] length too long {}, but it is not supported by broker",
                 msg.getTopic(), topicData.length);
             return new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null);
         }
 
+        // topic长度的限制
         if (topicData.length > MAX_TOPIC_LENGTH) {
             LOG.warn("putMessage message topic[{}] length too long {}, but it is not supported by broker",
                 msg.getTopic(), topicData.length);
@@ -102,6 +104,7 @@ public class HookUtils {
             return new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null);
         }
 
+        // 如果将 message 刷新到 osPageCache 比较耗时，则 broker 降级
         if (brokerController.getMessageStore().isOSPageCacheBusy()) {
             return new PutMessageResult(PutMessageStatus.OS_PAGE_CACHE_BUSY, null);
         }

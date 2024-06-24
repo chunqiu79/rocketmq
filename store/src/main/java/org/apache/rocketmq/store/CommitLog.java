@@ -16,39 +16,13 @@
  */
 package org.apache.rocketmq.store;
 
-import java.net.Inet6Address;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.rocketmq.common.MixAll;
-import org.apache.rocketmq.common.ServiceThread;
-import org.apache.rocketmq.common.SystemClock;
-import org.apache.rocketmq.common.TopicConfig;
-import org.apache.rocketmq.common.UtilAll;
+import org.apache.rocketmq.common.*;
 import org.apache.rocketmq.common.attribute.CQType;
 import org.apache.rocketmq.common.constant.LoggerName;
-import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageDecoder;
-import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.common.message.MessageExtBatch;
-import org.apache.rocketmq.common.message.MessageExtBrokerInner;
-import org.apache.rocketmq.common.message.MessageVersion;
+import org.apache.rocketmq.common.message.*;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.topic.TopicValidator;
 import org.apache.rocketmq.common.utils.QueueTypeUtils;
@@ -63,8 +37,15 @@ import org.apache.rocketmq.store.ha.autoswitch.AutoSwitchHAService;
 import org.apache.rocketmq.store.logfile.MappedFile;
 import org.apache.rocketmq.store.util.LibC;
 import org.rocksdb.RocksDBException;
-
 import sun.nio.ch.DirectBuffer;
+
+import java.net.Inet6Address;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * Store all metadata downtime for recovery, data protection reliability
@@ -901,10 +882,12 @@ public class CommitLog implements Swappable {
 
     public CompletableFuture<PutMessageResult> asyncPutMessage(final MessageExtBrokerInner msg) {
         // Set the storage time
+        // 设置存储的时间
         if (!defaultMessageStore.getMessageStoreConfig().isDuplicationEnable()) {
             msg.setStoreTimestamp(System.currentTimeMillis());
         }
         // Set the message body CRC (consider the most appropriate setting on the client)
+        // crc校验码，防止消息内容被篡改
         msg.setBodyCRC(UtilAll.crc32(msg.getBody()));
         if (enabledAppendPropCRC) {
             // delete crc32 properties if exist
@@ -913,6 +896,7 @@ public class CommitLog implements Swappable {
         // Back to Results
         AppendMessageResult result = null;
 
+        // 存储耗时相关的 metric ，可以收集这些指标，上报给监控系统
         StoreStatsService storeStatsService = this.defaultMessageStore.getStoreStatsService();
 
         String topic = msg.getTopic();
@@ -937,7 +921,10 @@ public class CommitLog implements Swappable {
         updateMaxMessageSize(putMessageThreadLocal);
         String topicQueueKey = generateKey(putMessageThreadLocal.getKeyBuilder(), msg);
         long elapsedTimeInLock = 0;
+        // MappedFile 相当于1个 CommitLog 的内存文件
         MappedFile unlockMappedFile = null;
+        // MappedFileQueue 管理这些连续的 MappedFile 内存文件
+        // 这里的 mappedFile 就是最新的 MappedFile 内存文件
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
 
         long currOffset;
@@ -994,10 +981,11 @@ public class CommitLog implements Swappable {
 
                 // Here settings are stored timestamp, in order to ensure an orderly
                 // global
+                // 这里再次设置1次存储时间，因为加了锁，这样就可以保证全局有序了
                 if (!defaultMessageStore.getMessageStoreConfig().isDuplicationEnable()) {
                     msg.setStoreTimestamp(beginLockTimestamp);
                 }
-
+                // 如果 （文件为空 或者 文件满了），需要创建一个 MappedFile
                 if (null == mappedFile || mappedFile.isFull()) {
                     mappedFile = this.mappedFileQueue.getLastMappedFile(0); // Mark: NewFile may be cause noise
                     if (isCloseReadAhead()) {
@@ -1009,12 +997,13 @@ public class CommitLog implements Swappable {
                     beginTimeInLock = 0;
                     return CompletableFuture.completedFuture(new PutMessageResult(PutMessageStatus.CREATE_MAPPED_FILE_FAILED, null));
                 }
-
+                // 将 broker 的 message 刷新到 MappedFile 内存文件中（注意：此时还没有刷盘）
                 result = mappedFile.appendMessage(msg, this.appendMessageCallback, putMessageContext);
                 switch (result.getStatus()) {
                     case PUT_OK:
                         onCommitLogAppend(msg, result, mappedFile);
                         break;
+                    // MappedFile（CommitLog） 满了不能写了，需要重新将 message 写入到一个新的 MappedFile（CommitLog） 文件中
                     case END_OF_FILE:
                         onCommitLogAppend(msg, result, mappedFile);
                         unlockMappedFile = mappedFile;
@@ -1073,6 +1062,7 @@ public class CommitLog implements Swappable {
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).add(result.getMsgNum());
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).add(result.getWroteBytes());
 
+        // 刷盘&&主从同步
         return handleDiskFlushAndHA(putMessageResult, msg, needAckNums, needHandleHA);
     }
 
@@ -1270,11 +1260,13 @@ public class CommitLog implements Swappable {
 
     private CompletableFuture<PutMessageResult> handleDiskFlushAndHA(PutMessageResult putMessageResult,
         MessageExt messageExt, int needAckNums, boolean needHandleHA) {
+        // 刷盘
         CompletableFuture<PutMessageStatus> flushResultFuture = handleDiskFlush(putMessageResult.getAppendMessageResult(), messageExt);
         CompletableFuture<PutMessageStatus> replicaResultFuture;
         if (!needHandleHA) {
             replicaResultFuture = CompletableFuture.completedFuture(PutMessageStatus.PUT_OK);
         } else {
+            // 主从同步
             replicaResultFuture = handleHA(putMessageResult.getAppendMessageResult(), putMessageResult, needAckNums);
         }
 
@@ -1867,6 +1859,7 @@ public class CommitLog implements Swappable {
 
             int msgLenWithoutProperties = preEncodeBuffer.getInt(0);
 
+            // 计算 msgLen ，即写入CommitLog占用的空间
             int msgLen = msgLenWithoutProperties + 2 + propertiesLength;
 
             // Exceeds the maximum message
@@ -1915,8 +1908,12 @@ public class CommitLog implements Swappable {
             preEncodeBuffer.limit(msgLen);
 
             // PHY OFFSET
+            // 物理位置，消息的绝对物理位置
+            // fileFromOffset ：1个 CommitLog 文件（对应1个 MappedFile文件）对应的偏移量（其实文件名就是这个偏移量）
+            // byteBuffer.position() ：当前 MappedFile （对应1个 CommitLog）的写位置
             long wroteOffset = fileFromOffset + byteBuffer.position();
 
+            // 生成唯一的 msgId
             Supplier<String> msgIdSupplier = () -> {
                 int sysflag = msgInner.getSysFlag();
                 int msgIdLen = (sysflag & MessageSysFlag.STOREHOSTADDRESS_V6_FLAG) == 0 ? 4 + 4 + 8 : 16 + 4 + 8;
@@ -1948,15 +1945,21 @@ public class CommitLog implements Swappable {
             }
 
             // Determines whether there is sufficient free space
+            // 确定当前 CommitLog 是否由足够的空间
+            // maxBlank ：当前这个 CommitLog （MappedFile）的剩余空间
+            // 1个 message 不能跨越 多个 CommitLog 文件
+            // 每个 CommitLog 文件必须要确保预留8个字节来标识当前这个 CommitLog 文件结尾
             if ((msgLen + END_FILE_MIN_BLANK_LENGTH) > maxBlank) {
                 this.msgStoreItemMemory.clear();
                 // 1 TOTALSIZE
                 this.msgStoreItemMemory.putInt(maxBlank);
                 // 2 MAGICCODE
+                // 魔数：用来标识当前 CommitLog 结尾
                 this.msgStoreItemMemory.putInt(CommitLog.BLANK_MAGIC_CODE);
                 // 3 The remaining space may be any value
                 // Here the length of the specially set maxBlank
                 final long beginTimeMills = CommitLog.this.defaultMessageStore.now();
+                // 将 message 写入到 MappedFile 中
                 byteBuffer.put(this.msgStoreItemMemory.array(), 0, 8);
                 return new AppendMessageResult(AppendMessageStatus.END_OF_FILE, wroteOffset,
                     maxBlank, /* only wrote 8 bytes, but declare wrote maxBlank for compute write position */
@@ -2160,6 +2163,7 @@ public class CommitLog implements Swappable {
         @Override
         public CompletableFuture<PutMessageStatus> handleDiskFlush(AppendMessageResult result, MessageExt messageExt) {
             // Synchronization flush
+            // 同步刷盘：GroupCommitService
             if (FlushDiskType.SYNC_FLUSH == CommitLog.this.defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
                 final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
                 if (messageExt.isWaitStoreMsgOK()) {
@@ -2173,6 +2177,7 @@ public class CommitLog implements Swappable {
                 }
             }
             // Asynchronous flush
+            // 异步刷盘：flushCommitLogService 或者 commitRealTimeService
             else {
                 if (!CommitLog.this.defaultMessageStore.isTransientStorePoolEnable()) {
                     flushCommitLogService.wakeup();

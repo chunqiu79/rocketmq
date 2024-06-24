@@ -30,6 +30,7 @@ public class MQFaultStrategy {
     private LatencyFaultTolerance<String> latencyFaultTolerance;
     /**
      * 发送消息延迟容错开关（默认关闭）
+     * 其实就是为了保证高可用，如果当 broker 挂掉之后，导致找不到 队列
      */
     private volatile boolean sendLatencyFaultEnable;
     private volatile boolean startDetectorEnable;
@@ -159,11 +160,12 @@ public class MQFaultStrategy {
                 tpInfo.resetIndex();
             }
             // 内部使用轮询算法
+            // 当前 broker 的所有队列都不可用的时候，这个时候mq是null，说明当前 broker 已经挂掉了
             MessageQueue mq = tpInfo.selectOneMessageQueue(availableFilter, brokerFilter);
             if (mq != null) {
                 return mq;
             }
-
+            // 当前 broker 挂掉了，需要重新选择 broker
             mq = tpInfo.selectOneMessageQueue(reachableFilter, brokerFilter);
             if (mq != null) {
                 return mq;

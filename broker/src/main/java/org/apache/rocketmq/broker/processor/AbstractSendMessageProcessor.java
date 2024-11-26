@@ -358,6 +358,7 @@ public abstract class AbstractSendMessageProcessor implements NettyRequestProces
         sendMessageContext.setCommercialOwner(owner);
 
         Map<String, String> properties = MessageDecoder.string2messageProperties(requestHeader.getProperties());
+        // 唯一标识，批量消息不会设置这个东西
         String uniqueKey = properties.get(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX);
         properties.put(MessageConst.PROPERTY_MSG_REGION, this.brokerController.getBrokerConfig().getRegionId());
         properties.put(MessageConst.PROPERTY_TRACE_SWITCH, String.valueOf(this.brokerController.getBrokerConfig().isTraceOn()));

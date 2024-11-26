@@ -31,7 +31,24 @@ public class Consumer {
     public static final String DEFAULT_NAMESRVADDR = "127.0.0.1:9876";
     public static final String TOPIC = "TopicTest";
 
-    public static void main(String[] args) throws MQClientException {
+    public static void main(String[] args) throws Exception {
+        custom();
+    }
+
+    public static void custom() throws Exception {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(CONSUMER_GROUP);
+        consumer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+        consumer.subscribe(TOPIC, "*");
+        consumer.registerMessageListener((MessageListenerConcurrently) (msg, context) -> {
+            System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msg);
+            return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+        });
+        consumer.start();
+        System.out.printf("Consumer Started.%n");
+    }
+
+    public static void old(String[] args) throws MQClientException {
 
         /*
          * Instantiate with specified consumer group name.

@@ -55,12 +55,13 @@ public class HookUtils {
     private static final Integer MAX_TOPIC_LENGTH = 255;
 
     public static PutMessageResult checkBeforePutMessage(BrokerController brokerController, final MessageExt msg) {
+        // 如果 broker 关闭了，拒绝写入消息
         if (brokerController.getMessageStore().isShutdown()) {
             LOG.warn("message store has shutdown, so putMessage is forbidden");
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
 
-        // （duplicationEnable 为 false && broker 为 slave） 不处理客户端发送的消息
+        // （duplicationEnable 为 false && broker 为 slave） 不处理
         if (!brokerController.getMessageStoreConfig().isDuplicationEnable() && BrokerRole.SLAVE == brokerController.getMessageStoreConfig().getBrokerRole()) {
             long value = PRINT_TIMES.getAndIncrement();
             if ((value % 50000) == 0) {
@@ -70,7 +71,7 @@ public class HookUtils {
             return new PutMessageResult(PutMessageStatus.SERVICE_NOT_AVAILABLE, null);
         }
 
-        // broker 不可以写也不处理客户端发送的消息
+        // broker不可以写，不处理
         if (!brokerController.getMessageStore().getRunningFlags().isWriteable()) {
             long value = PRINT_TIMES.getAndIncrement();
             if ((value % 50000) == 0) {
@@ -83,8 +84,10 @@ public class HookUtils {
         }
 
         final byte[] topicData = msg.getTopic().getBytes(MessageDecoder.CHARSET_UTF8);
-        boolean retryTopic = msg.getTopic() != null && msg.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX);
+
         // retryTopic 标识是否是 重试的topic
+        boolean retryTopic = msg.getTopic() != null && msg.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX);
+
         // （不是重试的 topic && topic 长度大于 最大范围）不处理
         if (!retryTopic && topicData.length > Byte.MAX_VALUE) {
             LOG.warn("putMessage message topic[{}] length too long {}, but it is not supported by broker",
@@ -92,19 +95,20 @@ public class HookUtils {
             return new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null);
         }
 
-        // topic长度的限制
+        // topic长度的限制，大于255字节不处理
         if (topicData.length > MAX_TOPIC_LENGTH) {
             LOG.warn("putMessage message topic[{}] length too long {}, but it is not supported by broker",
                 msg.getTopic(), topicData.length);
             return new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null);
         }
 
+        // 消息为空不处理
         if (msg.getBody() == null) {
             LOG.warn("putMessage message topic[{}], but message body is null", msg.getTopic());
             return new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null);
         }
 
-        // 如果将 message 刷新到 osPageCache 比较耗时，则 broker 降级
+        // 当前正在处理一个比较耗时的消息到CommitLog，不处理
         if (brokerController.getMessageStore().isOSPageCacheBusy()) {
             return new PutMessageResult(PutMessageStatus.OS_PAGE_CACHE_BUSY, null);
         }

@@ -288,7 +288,7 @@ public class MQClientInstance {
                     }
                     // Start request-response channel
                     this.mQClientAPIImpl.start();
-                    // Start various schedule tasks
+                    // 启动定时任务
                     this.startScheduledTask();
                     // Start pull service
                     this.pullMessageService.start();
@@ -309,8 +309,9 @@ public class MQClientInstance {
 
     private void startScheduledTask() {
         // namesrv地址为空
-        // 每隔 2分钟 拉取一次nameserver地址
         if (null == this.clientConfig.getNamesrvAddr()) {
+            // 10秒 之后执行，每次间隔 120秒
+            // 拉取 namesrv地址
             this.scheduledExecutorService.scheduleAtFixedRate(() -> {
                 try {
                     MQClientInstance.this.mQClientAPIImpl.fetchNameServerAddr();
@@ -320,8 +321,8 @@ public class MQClientInstance {
             }, 1000 * 10, 1000 * 60 * 2, TimeUnit.MILLISECONDS);
         }
 
-        // 每隔 pollNameServerInterval 毫秒更新 1 次 topic路由信息（默认30秒）
-        // 因为 broker 可能挂掉，由客户端（生产者或者消费者）自己解决
+        // 10毫秒 之后执行，每次间隔 30s（默认）
+        // 更新 topic路由信息 （因为 broker 可能会挂掉）
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 MQClientInstance.this.updateTopicRouteInfoFromNameServer();
@@ -754,7 +755,7 @@ public class MQClientInstance {
                 try {
                     TopicRouteData topicRouteData;
                     if (isDefault && defaultMQProducer != null) {
-                        // 第一次获取失败时，再次获取 topic路由信息 ，这次直接获取默认的路由信息
+                        // 第一次获取失败时，再次获取 topic 路由信息 ，这次直接获取默认的路由信息
                         topicRouteData = this.mQClientAPIImpl.getDefaultTopicRouteInfoFromNameServer(clientConfig.getMqClientApiTimeout());
                         if (topicRouteData != null) {
                             for (QueueData data : topicRouteData.getQueueDatas()) {

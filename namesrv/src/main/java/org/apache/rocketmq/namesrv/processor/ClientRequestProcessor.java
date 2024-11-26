@@ -19,9 +19,6 @@ package org.apache.rocketmq.namesrv.processor;
 
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import io.netty.channel.ChannelHandlerContext;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.rocketmq.common.MQVersion;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.common.help.FAQUrl;
@@ -36,6 +33,14 @@ import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * namesrv 对 client 获取topic路由信息的 处理类
+ * RequestCode.GET_ROUTEINFO_BY_TOPIC
+ */
 public class ClientRequestProcessor implements NettyRequestProcessor {
 
     private static Logger log = LoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
@@ -53,6 +58,7 @@ public class ClientRequestProcessor implements NettyRequestProcessor {
     @Override
     public RemotingCommand processRequest(final ChannelHandlerContext ctx,
         final RemotingCommand request) throws Exception {
+        // 通过 topic 获取 路由信息
         return this.getRouteInfoByTopic(ctx, request);
     }
 

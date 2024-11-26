@@ -16,11 +16,6 @@
  */
 package org.apache.rocketmq.namesrv.route;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.remoting.RPCHook;
@@ -32,6 +27,12 @@ import org.apache.rocketmq.remoting.protocol.route.BrokerData;
 import org.apache.rocketmq.remoting.protocol.route.QueueData;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+
 public class ZoneRouteRPCHook implements RPCHook {
 
     @Override
@@ -39,6 +40,9 @@ public class ZoneRouteRPCHook implements RPCHook {
 
     }
 
+    /**
+     * namesrv 对 broker获取topic路由信息请求的 响应处理 最后过滤一下
+     */
     @Override
     public void doAfterResponse(String remoteAddr, RemotingCommand request, RemotingCommand response) {
         if (RequestCode.GET_ROUTEINFO_BY_TOPIC != request.getCode()) {

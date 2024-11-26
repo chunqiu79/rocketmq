@@ -201,6 +201,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     public void start(final boolean startFactory) throws MQClientException {
         switch (this.serviceState) {
             case CREATE_JUST:
+                // 将状态置为 启动失败
                 this.serviceState = ServiceState.START_FAILED;
                 // 校验
                 this.checkConfig();
@@ -220,7 +221,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         null);
                 }
 
+                // producer 调用 start() 方法的时候 startFactory 就是 true
                 if (startFactory) {
+                    // 客户端启动
                     mQClientFactory.start();
                 }
 
@@ -663,7 +666,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final SendCallback sendCallback,
         final long timeout
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
-        // 校验 Producer 处于运行状态
+        // 校验 Producer 处于运行状态，不是运行状态抛出异常
         this.makeSureStateOK();
         // 校验消息格式
         Validators.checkMessage(msg, this.defaultMQProducer);
@@ -813,27 +816,32 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
             throw mqClientException;
         }
-
+        // 校验 nameserver 地址，为空抛出异常
         validateNameServerSetting();
 
         throw new MQClientException("No route info of this topic: " + msg.getTopic() + FAQUrl.suggestTodo(FAQUrl.NO_TOPIC_ROUTE_INFO),
             null).setResponseCode(ClientErrorCode.NOT_FOUND_TOPIC_EXCEPTION);
     }
 
+    /**
+     * client 获取 路由信息
+     * 1. 从缓存中获取
+     * 2. 缓存中没有，则发送请求从 namesrv 获取
+     */
     private TopicPublishInfo tryToFindTopicPublishInfo(final String topic) {
-        // 缓存中获取 Topic 发布信息
+        // 缓存中获取 Topic 发布信息（发布信息包含路由信息）
         TopicPublishInfo topicPublishInfo = this.topicPublishInfoTable.get(topic);
-        // 当无可用的 Topic 发布信息时，从 Namesrv 获取一次
+        // 当无可用的 Topic 发布信息时，从 namesrv 获取一次
         if (null == topicPublishInfo || !topicPublishInfo.ok()) {
             this.topicPublishInfoTable.putIfAbsent(topic, new TopicPublishInfo());
             this.mQClientFactory.updateTopicRouteInfoFromNameServer(topic);
             topicPublishInfo = this.topicPublishInfoTable.get(topic);
         }
-        // 若获取的 Topic 发布信息时候可用，则返回
+        // 若获取的 Topic 发布信息可用，则返回
         if (topicPublishInfo.isHaveTopicRouterInfo() || topicPublishInfo.ok()) {
             return topicPublishInfo;
         } else {
-            // Topic发布信息不存在，会再次获取，获取 default（默认的） 的 topic信息
+            // topic发布信息不存在，会再次获取，获取 default（默认的） 的 topic信息
             this.mQClientFactory.updateTopicRouteInfoFromNameServer(topic, true, this.defaultMQProducer);
             topicPublishInfo = this.topicPublishInfoTable.get(topic);
             return topicPublishInfo;
@@ -847,7 +855,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final TopicPublishInfo topicPublishInfo,
         final long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         long beginStartTime = System.currentTimeMillis();
+        // 获取 broker 名字
         String brokerName = this.mQClientFactory.getBrokerNameFromMessageQueue(mq);
+        // 获取 broker 地址
         String brokerAddr = this.mQClientFactory.findBrokerAddressInPublish(brokerName);
         if (null == brokerAddr) {
             tryToFindTopicPublishInfo(mq.getTopic());
@@ -862,6 +872,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             byte[] prevBody = msg.getBody();
             try {
                 //for MessageBatch,ID has been set in the generating process
+                // 不是批量消息，给当前消息设置唯一标识
                 if (!(msg instanceof MessageBatch)) {
                     MessageClientIDSetter.setUniqID(msg);
                 }
@@ -932,15 +943,21 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 requestHeader.setUnitMode(this.isUnitMode());
                 requestHeader.setBatch(msg instanceof MessageBatch);
                 requestHeader.setBrokerName(brokerName);
+
+                // 如果是 重试的消息
                 if (requestHeader.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
                     String reconsumeTimes = MessageAccessor.getReconsumeTime(msg);
+                    // 只有第一次会这样干
                     if (reconsumeTimes != null) {
+                        // 将消息的 reconsumeTimes 从 msg 中移除，然后设置到 requestHeader 中
                         requestHeader.setReconsumeTimes(Integer.valueOf(reconsumeTimes));
                         MessageAccessor.clearProperty(msg, MessageConst.PROPERTY_RECONSUME_TIME);
                     }
 
                     String maxReconsumeTimes = MessageAccessor.getMaxReconsumeTimes(msg);
+                    // 只有第一次会这样干
                     if (maxReconsumeTimes != null) {
+                        // 将消息的 maxReconsumeTimes 从 msg 中移除，然后设置到 requestHeader 中
                         requestHeader.setMaxReconsumeTimes(Integer.valueOf(maxReconsumeTimes));
                         MessageAccessor.clearProperty(msg, MessageConst.PROPERTY_MAX_RECONSUME_TIMES);
                     }
@@ -992,6 +1009,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         if (timeout < costTimeSync) {
                             throw new RemotingTooMuchRequestException("sendKernelImpl call timeout");
                         }
+                        // 发送消息
                         sendResult = this.mQClientFactory.getMQClientAPIImpl().sendMessage(
                             brokerAddr,
                             brokerName,

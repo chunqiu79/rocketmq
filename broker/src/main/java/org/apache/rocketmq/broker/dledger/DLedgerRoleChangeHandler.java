@@ -20,9 +20,6 @@ import io.openmessaging.storage.dledger.DLedgerLeaderElector;
 import io.openmessaging.storage.dledger.DLedgerServer;
 import io.openmessaging.storage.dledger.MemberState;
 import io.openmessaging.storage.dledger.utils.DLedgerUtils;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import org.apache.rocketmq.broker.BrokerController;
 import org.apache.rocketmq.common.ThreadFactoryImpl;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -32,6 +29,10 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.store.DefaultMessageStore;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.dledger.DLedgerCommitLog;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 public class DLedgerRoleChangeHandler implements DLedgerLeaderElector.RoleChangeHandler {
 
@@ -165,6 +166,7 @@ public class DLedgerRoleChangeHandler implements DLedgerLeaderElector.RoleChange
         this.brokerController.changeSpecialServiceStatus(true);
 
         //if the operations above are totally successful, we change to master
+        // broker 的 master 的 brokerId == 0
         this.brokerController.getBrokerConfig().setBrokerId(0); //TO DO check
         this.brokerController.getMessageStoreConfig().setBrokerRole(role);
 

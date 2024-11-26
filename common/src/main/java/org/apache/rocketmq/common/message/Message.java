@@ -22,6 +22,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 消息类
+ */
 public class Message implements Serializable {
     private static final long serialVersionUID = 8445773977080406428L;
 
@@ -39,18 +42,20 @@ public class Message implements Serializable {
     }
 
     public Message(String topic, String tags, String keys, int flag, byte[] body, boolean waitStoreMsgOK) {
+        // 主题
         this.topic = topic;
+
         this.flag = flag;
         this.body = body;
-
-        if (tags != null && tags.length() > 0) {
+        // tag标识，用于过滤
+        if (tags != null && !tags.isEmpty()) {
             this.setTags(tags);
         }
-
-        if (keys != null && keys.length() > 0) {
+        // 索引键，用空格隔开，根据key快速检索消息
+        if (keys != null && !keys.isEmpty()) {
             this.setKeys(keys);
         }
-
+        // 发送消息是否等消息存储完成之后再返回
         this.setWaitStoreMsgOK(waitStoreMsgOK);
     }
 

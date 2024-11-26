@@ -100,6 +100,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 if (rewriteResult != null) {
                     return rewriteResult;
                 }
+                // 构建 msg 上下文
                 sendMessageContext = buildMsgContext(ctx, requestHeader, request);
                 try {
                     this.executeSendMessageHookBefore(sendMessageContext);
@@ -112,6 +113,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 RemotingCommand response;
                 clearReservedProperties(requestHeader);
 
+                // 判断是否是批量消息
                 if (requestHeader.isBatch()) {
                     response = this.sendBatchMessage(ctx, request, sendMessageContext, requestHeader, mappingContext,
                         (ctx1, response1) -> executeSendMessageHookAfter(response1, ctx1));

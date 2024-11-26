@@ -16,12 +16,6 @@
  */
 package org.apache.rocketmq.namesrv;
 
-import java.util.Collections;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.rocketmq.common.ThreadFactoryImpl;
 import org.apache.rocketmq.common.constant.LoggerName;
@@ -42,14 +36,12 @@ import org.apache.rocketmq.remoting.Configuration;
 import org.apache.rocketmq.remoting.RemotingClient;
 import org.apache.rocketmq.remoting.RemotingServer;
 import org.apache.rocketmq.remoting.common.TlsMode;
-import org.apache.rocketmq.remoting.netty.NettyClientConfig;
-import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
-import org.apache.rocketmq.remoting.netty.NettyRemotingServer;
-import org.apache.rocketmq.remoting.netty.NettyServerConfig;
-import org.apache.rocketmq.remoting.netty.RequestTask;
-import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
+import org.apache.rocketmq.remoting.netty.*;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.srvutil.FileWatchService;
+
+import java.util.Collections;
+import java.util.concurrent.*;
 
 public class NamesrvController {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
@@ -99,12 +91,17 @@ public class NamesrvController {
     }
 
     public boolean initialize() {
+        // 加载配置
         loadConfig();
+        // 初始化 netty 相关
         initiateNetworkComponents();
+        // 初始化线程池
         initiateThreadExecutors();
         registerProcessor();
+        // 启动定时任务
         startScheduleService();
         initiateSslContext();
+        // 初始化 rpc 钩子
         initiateRpcHooks();
         return true;
     }
@@ -113,13 +110,20 @@ public class NamesrvController {
         this.kvConfigManager.load();
     }
 
+    /**
+     *
+     */
     private void startScheduleService() {
+        // 5 毫秒之后执行，每次间隔 5秒
+        // 扫描 broker，移除处于未激活状态的 broker
         this.scanExecutorService.scheduleAtFixedRate(NamesrvController.this.routeInfoManager::scanNotActiveBroker,
             5, this.namesrvConfig.getScanNotActiveBrokerInterval(), TimeUnit.MILLISECONDS);
-
+        // 1 分钟之后执行，每次间隔 10分钟
+        // 打印 config kv 配置
         this.scheduledExecutorService.scheduleAtFixedRate(NamesrvController.this.kvConfigManager::printAllPeriodically,
             1, 10, TimeUnit.MINUTES);
-
+        // 10 秒之后执行，每次间隔 1秒钟
+        // 打印水印信息
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
                 NamesrvController.this.printWaterMark();

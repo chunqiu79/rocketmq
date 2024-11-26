@@ -17,7 +17,6 @@
 package org.apache.rocketmq.remoting.common;
 
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
@@ -329,13 +328,9 @@ public class RemotingHelper {
         if ("".equals(addrRemote)) {
             channel.close();
         } else {
-            channel.close().addListener(new ChannelFutureListener() {
-                @Override
-                public void operationComplete(ChannelFuture future) throws Exception {
-                    log.info("closeChannel: close the connection to remote address[{}] result: {}", addrRemote,
-                        future.isSuccess());
-                }
-            });
+            channel.close().addListener((ChannelFutureListener) future ->
+                log.info("closeChannel: close the connection to remote address[{}] result: {}",
+                    addrRemote, future.isSuccess()));
         }
     }
 

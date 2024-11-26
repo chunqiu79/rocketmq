@@ -36,7 +36,29 @@ public class Producer {
     public static final String TOPIC = "TopicTest";
     public static final String TAG = "TagA";
 
-    public static void main(String[] args) throws MQClientException, InterruptedException {
+
+    public static void main(String[] args) throws Exception {
+        custom();
+    }
+
+    public static void custom() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer(PRODUCER_GROUP);
+        producer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
+        producer.start();
+        for (int i = 0; i < 1; i++) {
+            try {
+                Message msg = new Message(TOPIC, TAG, ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET));
+                SendResult sendResult = producer.send(msg);
+                System.out.printf("%s%n", sendResult);
+            } catch (Exception e) {
+                System.err.println("发送消息失败:" + e.getMessage());
+                Thread.sleep(1000);
+            }
+        }
+        producer.shutdown();
+    }
+
+    public static void old(String[] args) throws MQClientException, InterruptedException {
 
         /*
          * Instantiate with a producer group name.

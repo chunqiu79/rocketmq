@@ -16,12 +16,6 @@
  */
 package org.apache.rocketmq.broker;
 
-import java.io.BufferedInputStream;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Properties;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Option;
@@ -41,6 +35,13 @@ import org.apache.rocketmq.srvutil.ServerUtil;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.MessageStoreConfig;
 
+import java.io.BufferedInputStream;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class BrokerStartup {
 
     public static Logger log;
@@ -52,6 +53,7 @@ public class BrokerStartup {
 
     public static BrokerController start(BrokerController controller) {
         try {
+            // 启动
             controller.start();
 
             String tip = String.format("The broker[%s, %s] boot success. serializeType=%s",

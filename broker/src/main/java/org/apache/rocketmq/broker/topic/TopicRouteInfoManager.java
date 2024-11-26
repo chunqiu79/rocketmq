@@ -17,16 +17,6 @@
 package org.apache.rocketmq.broker.topic;
 
 import com.google.common.collect.Sets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import org.apache.rocketmq.broker.BrokerController;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
@@ -43,6 +33,17 @@ import org.apache.rocketmq.remoting.protocol.NamespaceUtil;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.route.BrokerData;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class TopicRouteInfoManager {
 
@@ -67,9 +68,10 @@ public class TopicRouteInfoManager {
 
     public void start() {
         this.scheduledExecutorService = ThreadUtils.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("TopicRouteInfoManagerScheduledThread"));
-
+        // 1秒 之后执行，每次间隔 30s（默认）
         this.scheduledExecutorService.scheduleAtFixedRate(() -> {
             try {
+                // 将 namesrv 的 topic 路由更新到 broker中
                 updateTopicRouteInfoFromNameServer();
             } catch (Exception e) {
                 log.error("ScheduledTask: failed to pull TopicRouteData from NameServer", e);

@@ -160,7 +160,7 @@ public class MQFaultStrategy {
                 tpInfo.resetIndex();
             }
             // 内部使用轮询算法
-            // 当前 broker 的所有队列都不可用的时候，这个时候mq是null，说明当前 broker 已经挂掉了
+            // 当前 broker 的所有队列都不可用的时候，这个时候 mq 是 null，说明当前 broker 已经挂掉了
             MessageQueue mq = tpInfo.selectOneMessageQueue(availableFilter, brokerFilter);
             if (mq != null) {
                 return mq;

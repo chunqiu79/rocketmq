@@ -927,6 +927,7 @@ public class CommitLog implements Swappable {
         // 这里的 mappedFile 就是最新的 MappedFile 内存文件
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
 
+        // 当前文件的偏移量，需要从这个偏移量开始写入
         long currOffset;
         if (mappedFile == null) {
             currOffset = 0;
@@ -973,7 +974,7 @@ public class CommitLog implements Swappable {
             }
             msg.setEncodedBuff(putMessageThreadLocal.getEncoder().getEncoderBuffer());
             PutMessageContext putMessageContext = new PutMessageContext(topicQueueKey);
-
+            // 加锁
             putMessageLock.lock(); //spin or ReentrantLock ,depending on store config
             try {
                 long beginLockTimestamp = this.defaultMessageStore.getSystemClock().now();
@@ -987,6 +988,7 @@ public class CommitLog implements Swappable {
                 }
                 // 如果 （文件为空 或者 文件满了），需要创建一个 MappedFile
                 if (null == mappedFile || mappedFile.isFull()) {
+                    // 创建一个 MappedFile
                     mappedFile = this.mappedFileQueue.getLastMappedFile(0); // Mark: NewFile may be cause noise
                     if (isCloseReadAhead()) {
                         setFileReadMode(mappedFile, LibC.MADV_RANDOM);
@@ -1000,6 +1002,7 @@ public class CommitLog implements Swappable {
                 // 将 broker 的 message 刷新到 MappedFile 内存文件中（注意：此时还没有刷盘）
                 result = mappedFile.appendMessage(msg, this.appendMessageCallback, putMessageContext);
                 switch (result.getStatus()) {
+                    // 正常返回PUT_OK
                     case PUT_OK:
                         onCommitLogAppend(msg, result, mappedFile);
                         break;

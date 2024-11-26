@@ -18,20 +18,6 @@ package org.apache.rocketmq.namesrv.routeinfo;
 
 import com.google.common.collect.Sets;
 import io.netty.channel.Channel;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.TopicConfig;
@@ -52,11 +38,7 @@ import org.apache.rocketmq.remoting.exception.RemotingTooMuchRequestException;
 import org.apache.rocketmq.remoting.protocol.DataVersion;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
-import org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup;
-import org.apache.rocketmq.remoting.protocol.body.ClusterInfo;
-import org.apache.rocketmq.remoting.protocol.body.TopicConfigAndMappingSerializeWrapper;
-import org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper;
-import org.apache.rocketmq.remoting.protocol.body.TopicList;
+import org.apache.rocketmq.remoting.protocol.body.*;
 import org.apache.rocketmq.remoting.protocol.header.NotifyMinBrokerIdChangeRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.UnRegisterBrokerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.namesrv.RegisterBrokerResult;
@@ -65,14 +47,48 @@ import org.apache.rocketmq.remoting.protocol.route.QueueData;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 import org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo;
 
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * nameserver 的路由实现类
+ */
 public class RouteInfoManager {
     private static final Logger log = LoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
     private final static long DEFAULT_BROKER_CHANNEL_EXPIRED_TIME = 1000 * 60 * 2;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    /**
+     * topic消息队列 的路由信息，消息发送时根据路由表进行负载均衡
+     * key：topic 名字
+     */
     private final Map<String/* topic */, Map<String, QueueData>> topicQueueTable;
+    /**
+     * broker 基础信息
+     * key：broker 名字
+     * value：broker 信息
+     */
     private final Map<String/* brokerName */, BrokerData> brokerAddrTable;
+    /**
+     * broker 集群信息
+     * key：集群名字
+     * value：集群中对应的 broker 名字
+     */
     private final Map<String/* clusterName */, Set<String/* brokerName */>> clusterAddrTable;
+    /**
+     * broker 状态信息，nameserver 每次收到心跳都会替换该信息
+     * 这个是路由删除的重要依据
+     * key：broker地址信息
+     * value：broker存活信息
+     */
     private final Map<BrokerAddrInfo/* brokerAddr */, BrokerLiveInfo> brokerLiveTable;
+    /**
+     * broker 上的 filterServer 列表，用于消息过滤
+     * key：broker地址信息
+     */
     private final Map<BrokerAddrInfo/* brokerAddr */, List<String>/* Filter Server */> filterServerTable;
     private final Map<String/* topic */, Map<String/*brokerName*/, TopicQueueMappingInfo>> topicQueueMappingInfoTable;
 
@@ -223,6 +239,13 @@ public class RouteInfoManager {
         return registerBroker(clusterName, brokerAddr, brokerName, brokerId, haServerAddr, zoneName, timeoutMillis, false, topicConfigWrapper, filterServerList, channel);
     }
 
+    /**
+     * 1. 写锁，防止并发修改
+     * 2. 维护 clusterAddrTable
+     * 3. 维护 brokerAddrTable
+     * 4. 维护 topicQueueTable
+     * 5. 维护 brokerLiveTable
+     */
     public RegisterBrokerResult registerBroker(
         final String clusterName,
         final String brokerAddr,
@@ -237,14 +260,16 @@ public class RouteInfoManager {
         final Channel channel) {
         RegisterBrokerResult result = new RegisterBrokerResult();
         try {
+            // 写锁，防止并发修改 路由表
             this.lock.writeLock().lockInterruptibly();
 
-            //init or update the cluster info
+            // 维护 clusterAddrTable
+            // 如果 不存在对应的集群信息，则初始化1个集群
             Set<String> brokerNames = ConcurrentHashMapUtils.computeIfAbsent((ConcurrentHashMap<String, Set<String>>) this.clusterAddrTable, clusterName, k -> new HashSet<>());
             brokerNames.add(brokerName);
 
+            // 维护 brokerAddrTable
             boolean registerFirst = false;
-
             BrokerData brokerData = this.brokerAddrTable.get(brokerName);
             if (null == brokerData) {
                 registerFirst = true;
@@ -300,11 +325,13 @@ public class RouteInfoManager {
             String oldAddr = brokerAddrsMap.put(brokerId, brokerAddr);
             registerFirst = registerFirst || (StringUtils.isEmpty(oldAddr));
 
+            // isMaster 是否是主节点
             boolean isMaster = MixAll.MASTER_ID == brokerId;
 
             boolean isPrimeSlave = !isOldVersionBroker && !isMaster
                 && brokerId == Collections.min(brokerAddrsMap.keySet());
 
+            // 维护 topicQueueTable
             if (null != topicConfigWrapper && (isMaster || isPrimeSlave)) {
 
                 ConcurrentMap<String, TopicConfig> tcTable =
@@ -345,6 +372,7 @@ public class RouteInfoManager {
                                 // Wipe write perm for prime slave
                                 topicConfig.setPerm(topicConfig.getPerm() & (~PermName.PERM_WRITE));
                             }
+                            // 创建&更新 topicQueueTable
                             this.createAndUpdateQueueData(brokerName, topicConfig);
                         }
                     }
@@ -362,7 +390,7 @@ public class RouteInfoManager {
                     }
                 }
             }
-
+            // 维护 brokerLiveTable
             BrokerAddrInfo brokerAddrInfo = new BrokerAddrInfo(clusterName, brokerAddr);
             BrokerLiveInfo prevBrokerLiveInfo = this.brokerLiveTable.put(brokerAddrInfo,
                 new BrokerLiveInfo(
@@ -374,7 +402,7 @@ public class RouteInfoManager {
             if (null == prevBrokerLiveInfo) {
                 log.info("new broker registered, {} HAService: {}", brokerAddrInfo, haServerAddr);
             }
-
+            // 维护 filterServerTable
             if (filterServerList != null) {
                 if (filterServerList.isEmpty()) {
                     this.filterServerTable.remove(brokerAddrInfo);
@@ -568,12 +596,19 @@ public class RouteInfoManager {
         unRegisterBroker(Sets.newHashSet(unRegisterBrokerRequest));
     }
 
+    /**
+     * 1. 获取写锁，防止并发 ==> this.lock.writeLock().lockInterruptibly()
+     * 2. brokerLiveTable 删除 broker信息
+     * 3. filterServerTable 删除 broker信息
+     * 4. brokerAddrTable 删除 broker信息（前置条件：当前brokerName 只有 1个地址）
+     * 5. clusterAddrTable 删除 集群信息 （前置条件：这个集群中只包含 1个brokerName的信息）
+     */
     public void unRegisterBroker(Set<UnRegisterBrokerRequestHeader> unRegisterRequests) {
         try {
             Set<String> removedBroker = new HashSet<>();
             Set<String> reducedBroker = new HashSet<>();
             Map<String, BrokerStatusChangeInfo> needNotifyBrokerMap = new HashMap<>();
-
+            // 获取 写锁
             this.lock.writeLock().lockInterruptibly();
             for (final UnRegisterBrokerRequestHeader unRegisterRequest : unRegisterRequests) {
                 final String brokerName = unRegisterRequest.getBrokerName();
@@ -581,15 +616,13 @@ public class RouteInfoManager {
                 final String brokerAddr = unRegisterRequest.getBrokerAddr();
 
                 BrokerAddrInfo brokerAddrInfo = new BrokerAddrInfo(clusterName, brokerAddr);
-
+                // brokerLiveTable 删除 broker信息
                 BrokerLiveInfo brokerLiveInfo = this.brokerLiveTable.remove(brokerAddrInfo);
                 log.info("unregisterBroker, remove from brokerLiveTable {}, {}",
-                    brokerLiveInfo != null ? "OK" : "Failed",
-                    brokerAddrInfo
-                );
-
+                    brokerLiveInfo != null ? "OK" : "Failed", brokerAddrInfo);
+                // filterServerTable 删除 broker信息
                 this.filterServerTable.remove(brokerAddrInfo);
-
+                // 处理 brokerAddrTable
                 boolean removeBrokerName = false;
                 boolean isMinBrokerIdChanged = false;
                 BrokerData brokerData = this.brokerAddrTable.get(brokerName);
@@ -603,7 +636,9 @@ public class RouteInfoManager {
                         removed ? "OK" : "Failed",
                         brokerAddrInfo
                     );
+                    // 当前brokerName 只有 1个地址
                     if (brokerData.getBrokerAddrs().isEmpty()) {
+                        // brokerAddrTable 删除 broker信息
                         this.brokerAddrTable.remove(brokerName);
                         log.info("unregisterBroker, remove name from brokerAddrTable OK, {}",
                             brokerName
@@ -616,15 +651,16 @@ public class RouteInfoManager {
                     }
                 }
 
+                // 处理 clusterAddrTable
                 if (removeBrokerName) {
                     Set<String> nameSet = this.clusterAddrTable.get(clusterName);
                     if (nameSet != null) {
                         boolean removed = nameSet.remove(brokerName);
                         log.info("unregisterBroker, remove name from clusterAddrTable {}, {}",
-                            removed ? "OK" : "Failed",
-                            brokerName);
-
+                            removed ? "OK" : "Failed", brokerName);
+                        // 如果 某个集群中只包含 1个brokerName的信息
                         if (nameSet.isEmpty()) {
+                            // 从 clusterAddrTable 中删除这个 brokerName的集群信息
                             this.clusterAddrTable.remove(clusterName);
                             log.info("unregisterBroker, remove cluster from clusterAddrTable {}",
                                 clusterName
@@ -708,6 +744,7 @@ public class RouteInfoManager {
         topicRouteData.setFilterServerTable(filterServerMap);
 
         try {
+            // 读锁
             this.lock.readLock().lockInterruptibly();
             Map<String, QueueData> queueDataMap = this.topicQueueTable.get(topic);
             if (queueDataMap != null) {
@@ -806,7 +843,9 @@ public class RouteInfoManager {
             for (Entry<BrokerAddrInfo, BrokerLiveInfo> next : this.brokerLiveTable.entrySet()) {
                 long last = next.getValue().getLastUpdateTimestamp();
                 long timeoutMillis = next.getValue().getHeartbeatTimeoutMillis();
+                // 过期了，也就是 broker 已经超过 timeoutMillis 没有给 当前namesrv 发送心跳了
                 if ((last + timeoutMillis) < System.currentTimeMillis()) {
+                    // 关闭 当前namesrv 和 broker 之间的channel连接
                     RemotingHelper.closeChannel(next.getValue().getChannel());
                     log.warn("The broker channel expired, {} {}ms", next.getKey(), timeoutMillis);
                     this.onChannelDestroy(next.getKey());
@@ -823,6 +862,7 @@ public class RouteInfoManager {
         if (brokerAddrInfo != null) {
             try {
                 try {
+                    // 这里一样要获取写锁，控制并发
                     this.lock.readLock().lockInterruptibly();
                     needUnRegister = setupUnRegisterRequest(unRegisterRequest, brokerAddrInfo);
                 } finally {
@@ -1117,7 +1157,13 @@ public class RouteInfoManager {
  * broker address information
  */
 class BrokerAddrInfo {
+    /**
+     * 集群名字
+     */
     private String clusterName;
+    /**
+     * broker 地址
+     */
     private String brokerAddr;
 
     private int hash;
@@ -1178,7 +1224,13 @@ class BrokerAddrInfo {
 }
 
 class BrokerLiveInfo {
+    /**
+     * 上次收到的 broker 心跳时间
+     */
     private long lastUpdateTimestamp;
+    /**
+     * 默认是 120秒
+     */
     private long heartbeatTimeoutMillis;
     private DataVersion dataVersion;
     private Channel channel;

@@ -16,11 +16,14 @@
  */
 package org.apache.rocketmq.common.message;
 
-import java.nio.ByteBuffer;
-
 import org.apache.rocketmq.common.TopicFilterType;
 import org.apache.rocketmq.common.utils.MessageUtils;
 
+import java.nio.ByteBuffer;
+
+/**
+ * broker 内部使用的消息
+ */
 public class MessageExtBrokerInner extends MessageExt {
     private static final long serialVersionUID = 7256001576878700634L;
     private String propertiesString;

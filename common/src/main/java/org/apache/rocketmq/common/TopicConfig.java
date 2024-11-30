@@ -19,11 +19,12 @@ package org.apache.rocketmq.common;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
 import com.alibaba.fastjson.annotation.JSONField;
+import org.apache.rocketmq.common.attribute.TopicMessageType;
+import org.apache.rocketmq.common.constant.PermName;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import org.apache.rocketmq.common.attribute.TopicMessageType;
-import org.apache.rocketmq.common.constant.PermName;
 
 import static org.apache.rocketmq.common.TopicAttributes.TOPIC_MESSAGE_TYPE_ATTRIBUTE;
 
@@ -31,14 +32,31 @@ public class TopicConfig {
     private static final String SEPARATOR = " ";
     public static int defaultReadQueueNums = 16;
     public static int defaultWriteQueueNums = 16;
-    private static final TypeReference<Map<String, String>> ATTRIBUTES_TYPE_REFERENCE = new TypeReference<Map<String, String>>() {
-    };
+    private static final TypeReference<Map<String, String>> ATTRIBUTES_TYPE_REFERENCE = new TypeReference<Map<String, String>>() {};
+    /**
+     * 主题名称
+     */
     private String topicName;
+    /**
+     * 读队列数量
+     */
     private int readQueueNums = defaultReadQueueNums;
+    /**
+     * 写队列数量
+     */
     private int writeQueueNums = defaultWriteQueueNums;
+    /**
+     * 权限码
+     */
     private int perm = PermName.PERM_READ | PermName.PERM_WRITE;
+    /**
+     * 主题过滤方式
+     */
     private TopicFilterType topicFilterType = TopicFilterType.SINGLE_TAG;
     private int topicSysFlag = 0;
+    /**
+     * 是否是顺序消息
+     */
     private boolean order = false;
     // Field attributes should not have ' ' char in key or value, otherwise will lead to decode failure.
     private Map<String, String> attributes = new HashMap<>();

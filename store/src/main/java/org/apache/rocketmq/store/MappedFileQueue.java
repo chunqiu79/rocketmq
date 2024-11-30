@@ -17,17 +17,6 @@
 package org.apache.rocketmq.store;
 
 import com.google.common.collect.Lists;
-import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.stream.Stream;
 import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.UtilAll;
@@ -37,19 +26,43 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.store.logfile.DefaultMappedFile;
 import org.apache.rocketmq.store.logfile.MappedFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Stream;
+
+/**
+ * MappedFile的管理容器
+ * 相当于 CommitLog的目录
+ */
 public class MappedFileQueue implements Swappable {
     private static final Logger log = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     private static final Logger LOG_ERROR = LoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
-
+    /**
+     * 存储目录
+     */
     protected final String storePath;
-
+    /**
+     * 单个文件存储大小
+     */
     protected final int mappedFileSize;
-
+    /**
+     * MappedFile集合
+     */
     protected final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<>();
-
+    /**
+     * 创建MappedFile服务类
+     */
     protected final AllocateMappedFileService allocateMappedFileService;
-
+    /**
+     * 当前刷盘指针，表示该指针之前的所有数据全部持久化到磁盘
+     */
     protected long flushedWhere = 0;
+    /**
+     * 当前数据提交指针，内存中ByteBuffer当前的写指针，该值大于、等于flushedWhere
+     */
     protected long committedWhere = 0;
 
     protected volatile long storeTimestamp = 0;
@@ -163,6 +176,10 @@ public class MappedFileQueue implements Swappable {
         return null;
     }
 
+    /**
+     * 根据消息存储时间戳查找 MappedFile。
+     * 从MappedFile列表中第一个文件开始查找，找到第一个最后一次更新时间大于待查找时间戳的文件，如果不存在，则返回最后一个MappedFile
+     */
     public MappedFile getMappedFileByTime(final long timestamp) {
         Object[] mfs = this.copyMappedFiles(0);
 
@@ -378,6 +395,7 @@ public class MappedFileQueue implements Swappable {
 
     public MappedFile getLastMappedFile() {
         MappedFile mappedFileLast = null;
+        // TODO: 2024/11/29 这里为啥要用while，不直接用if
         while (!this.mappedFiles.isEmpty()) {
             try {
                 mappedFileLast = this.mappedFiles.get(this.mappedFiles.size() - 1);
@@ -428,8 +446,11 @@ public class MappedFileQueue implements Swappable {
         return true;
     }
 
+    /**
+     * 获取存储文件最小偏移量。
+     * 并不是直接返回0，而是返回第1个MappedFile的getFileFormOffset()方法
+     */
     public long getMinOffset() {
-
         if (!this.mappedFiles.isEmpty()) {
             try {
                 return this.mappedFiles.get(0).getFileFromOffset();
@@ -442,6 +463,10 @@ public class MappedFileQueue implements Swappable {
         return -1;
     }
 
+    /**
+     * 获取存储文件的最大偏移量。
+     * 返回最后一个MappedFile的fileFromOffset + MappedFile当前的读指针
+     */
     public long getMaxOffset() {
         MappedFile mappedFile = getLastMappedFile();
         if (mappedFile != null) {
@@ -450,6 +475,9 @@ public class MappedFileQueue implements Swappable {
         return 0;
     }
 
+    /**
+     * 返回存储文件当前的写指针。返回最后一个文件的fileFromOffset，加上当前写指针位置
+     */
     public long getMaxWrotePosition() {
         MappedFile mappedFile = getLastMappedFile();
         if (mappedFile != null) {
@@ -662,18 +690,22 @@ public class MappedFileQueue implements Swappable {
     }
 
     /**
-     * Finds a mapped file by offset.
-     *
-     * @param offset Offset.
-     * @param returnFirstOnNotFound If the mapped file is not found, then return the first one.
-     * @return Mapped file or null (when not found and returnFirstOnNotFound is <code>false</code>).
+     * 根据消息偏移量offset查找 MappedFile，但是不能直接使用offset%mappedFileSize。
+     * 这是因为使用了内存映射，只要是存在于存储目录下的文件，都需要对应创建内存映射文件，如果不定时将已消的消息从存储文件中删除，会造成极大的内存压力与资源浪费，
+     * 所以RocketMQ采取定时删除存储文件的策略。也就是说，在存储文件中，第一个文件不一定是00000000000000000000，因为该文件在某一时刻会被删除，
+     * 所以根据offset定位MappedFile的算法为(int)((offset/this.mappedFileSize) - (firstMappedFile.getFileFromOffset()/this.MappedFileSize))
+     * offset/this.mappedFileSize：按理来说属于第几个文件
+     * firstMappedFile.getFileFromOffset()/this.MappedFileSize：第一个文件之前被删除的文件个数
      */
     public MappedFile findMappedFileByOffset(final long offset, final boolean returnFirstOnNotFound) {
         try {
+            // 第一个映射文件
             MappedFile firstMappedFile = this.getFirstMappedFile();
+            // 最后一个映射文件
             MappedFile lastMappedFile = this.getLastMappedFile();
             if (firstMappedFile != null && lastMappedFile != null) {
                 if (offset < firstMappedFile.getFileFromOffset() || offset >= lastMappedFile.getFileFromOffset() + this.mappedFileSize) {
+                    // offset不在文件范围内，offset小于第一个文件的起始偏移量 或 大于最后一个文件的结束偏移量（lastMappedFile.getFileFromOffset() + this.mappedFileSize）
                     LOG_ERROR.warn("Offset not matched. Request offset: {}, firstOffset: {}, lastOffset: {}, mappedFileSize: {}, mappedFiles count: {}",
                         offset,
                         firstMappedFile.getFileFromOffset(),

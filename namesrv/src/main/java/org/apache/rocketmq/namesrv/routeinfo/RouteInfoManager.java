@@ -793,14 +793,14 @@ public class RouteInfoManager {
                 return topicRouteData;
             }
 
-            if (topicRouteData.getBrokerDatas().size() == 0 || topicRouteData.getQueueDatas().size() == 0) {
+            if (topicRouteData.getBrokerDatas().isEmpty() || topicRouteData.getQueueDatas().isEmpty()) {
                 return topicRouteData;
             }
 
             boolean needActingMaster = false;
 
             for (final BrokerData brokerData : topicRouteData.getBrokerDatas()) {
-                if (brokerData.getBrokerAddrs().size() != 0
+                if (!brokerData.getBrokerAddrs().isEmpty()
                     && !brokerData.getBrokerAddrs().containsKey(MixAll.MASTER_ID)) {
                     needActingMaster = true;
                     break;
@@ -813,7 +813,7 @@ public class RouteInfoManager {
 
             for (final BrokerData brokerData : topicRouteData.getBrokerDatas()) {
                 final HashMap<Long, String> brokerAddrs = brokerData.getBrokerAddrs();
-                if (brokerAddrs.size() == 0 || brokerAddrs.containsKey(MixAll.MASTER_ID) || !brokerData.isEnableActingMaster()) {
+                if (brokerAddrs.isEmpty() || brokerAddrs.containsKey(MixAll.MASTER_ID) || !brokerData.isEnableActingMaster()) {
                     continue;
                 }
 

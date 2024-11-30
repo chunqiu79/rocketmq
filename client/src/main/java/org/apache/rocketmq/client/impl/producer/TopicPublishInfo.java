@@ -26,10 +26,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TopicPublishInfo {
+    /**
+     * 是否是顺序消息
+     */
     private boolean orderTopic = false;
     private boolean haveTopicRouterInfo = false;
-    // 这里 messageQueueList 的数量：每个 topic 分配的队列数目 * 每个 broker 的 topic 数目 * broker 数目
+    /**
+     * 该主题队列的消息队列
+     * 这里 messageQueueList 的数量：每个 topic 分配的队列数目 * 每个 broker 的 topic 数目 * broker 数目
+     */
     private List<MessageQueue> messageQueueList = new ArrayList<>();
+    /**
+     * 每选择1次消息队列，该值都会+1，如果超过Integer.MAX_VALUE，该值会重置为0
+     * 用于选择消息队列
+     */
     private volatile ThreadLocalIndex sendWhichQueue = new ThreadLocalIndex();
     private TopicRouteData topicRouteData;
 

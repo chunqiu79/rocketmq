@@ -77,6 +77,9 @@ import static org.apache.rocketmq.broker.metrics.BrokerMetricsConstant.LABEL_MES
 import static org.apache.rocketmq.broker.metrics.BrokerMetricsConstant.LABEL_TOPIC;
 import static org.apache.rocketmq.remoting.protocol.RemotingCommand.buildErrorResponse;
 
+/**
+ * mq client 发送消息请求 处理类
+ */
 public class SendMessageProcessor extends AbstractSendMessageProcessor implements NettyRequestProcessor {
 
     public SendMessageProcessor(final BrokerController brokerController) {
@@ -115,9 +118,11 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
 
                 // 判断是否是批量消息
                 if (requestHeader.isBatch()) {
+                    // 发送批量消息
                     response = this.sendBatchMessage(ctx, request, sendMessageContext, requestHeader, mappingContext,
                         (ctx1, response1) -> executeSendMessageHookAfter(response1, ctx1));
                 } else {
+                    // 发送普通消息
                     response = this.sendMessage(ctx, request, sendMessageContext, requestHeader, mappingContext,
                         (ctx12, response12) -> executeSendMessageHookAfter(response12, ctx12));
                 }
@@ -178,6 +183,9 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         return null;
     }
 
+    /**
+     *
+     */
     private boolean handleRetryAndDLQ(SendMessageRequestHeader requestHeader, RemotingCommand response,
         RemotingCommand request,
         MessageExt msg, TopicConfig topicConfig, Map<String, String> properties) {
@@ -242,13 +250,18 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         return true;
     }
 
+    /**
+     * 1. 预处理消息，内部会对 发送的消息 是否合法进行校验
+     * 2. 构建 broker 内部使用的 message
+     * 3. 如果是当前是重试消息，重试次数大于maxReconsumeTimes的时候，消息就进入死信队列
+     */
     public RemotingCommand sendMessage(final ChannelHandlerContext ctx,
         final RemotingCommand request,
         final SendMessageContext sendMessageContext,
         final SendMessageRequestHeader requestHeader,
         final TopicQueueMappingContext mappingContext,
         final SendMessageCallback sendMessageCallback) throws RemotingCommandException {
-
+        // 预处理消息，内部会对 发送的消息 是否合法进行校验
         final RemotingCommand response = preSend(ctx, request, requestHeader);
         if (response.getCode() != -1) {
             return response;
@@ -272,7 +285,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         msgInner.setQueueId(queueIdInt);
 
         Map<String, String> oriProps = MessageDecoder.string2messageProperties(requestHeader.getProperties());
-        // 如果是消费消息的（也就是以"%RETRY%"开头的） topic 重试次数大于 maxReconsumeTimes（消费最大重试次数）的时候，消息就进入死信队列
+        // 如果是重试消息的（也就是以"%RETRY%"开头的） topic 重试次数大于 maxReconsumeTimes（消费最大重试次数）的时候，消息就进入死信队列
         if (!handleRetryAndDLQ(requestHeader, response, request, msgInner, topicConfig, oriProps)) {
             return response;
         }
@@ -327,8 +340,9 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         }
 
         long beginTimeMillis = this.brokerController.getMessageStore().now();
-
         if (brokerController.getBrokerConfig().isAsyncSendEnable()) {
+            // 异步
+
             CompletableFuture<PutMessageResult> asyncPutMessageFuture;
             if (sendTransactionPrepareMessage) {
                 asyncPutMessageFuture = this.brokerController.getTransactionalMessageService().asyncPrepareMessage(msgInner);
@@ -356,12 +370,14 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             // Returns null to release the send message thread
             return null;
         } else {
+            // 同步
+
             PutMessageResult putMessageResult = null;
             if (sendTransactionPrepareMessage) {
                 // 处理事务消息的 prepare 消息
                 putMessageResult = this.brokerController.getTransactionalMessageService().prepareMessage(msgInner);
             } else {
-                // 处理普通消息和事务消息的 commit/rollback 消息
+                // 处理普通消息 或者 事务消息的 commit/rollback 消息
                 putMessageResult = this.brokerController.getMessageStore().putMessage(msgInner);
             }
             handlePutMessageResult(putMessageResult, response, request, msgInner, responseHeader, sendMessageContext, ctx, queueIdInt, beginTimeMillis, mappingContext, BrokerMetricsManager.getMessageType(requestHeader));

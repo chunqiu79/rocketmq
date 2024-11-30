@@ -90,7 +90,11 @@ public class MQClientInstance {
     private final NettyClientConfig nettyClientConfig;
     private final MQClientAPIImpl mQClientAPIImpl;
     private final MQAdminImpl mQAdminImpl;
-    // 缓存，key：topic value：路由信息
+    /**
+     * client 本地缓存，用来存储 topic路由信息
+     * key：topic
+     * value：路由信息
+     */
     private final ConcurrentMap<String/* Topic */, TopicRouteData> topicRouteTable = new ConcurrentHashMap<>();
     private final ConcurrentMap<String/* Topic */, ConcurrentMap<MessageQueue, String/*brokerName*/>> topicEndPointsTable = new ConcurrentHashMap<>();
     private final Lock lockNamesrv = new ReentrantLock();
@@ -203,7 +207,7 @@ public class MQClientInstance {
         TopicPublishInfo info = new TopicPublishInfo();
         // TO DO should check the usage of raw route, it is better to remove such field
         info.setTopicRouteData(route);
-        if (route.getOrderTopicConf() != null && route.getOrderTopicConf().length() > 0) {
+        if (route.getOrderTopicConf() != null && !route.getOrderTopicConf().isEmpty()) {
             String[] brokers = route.getOrderTopicConf().split(";");
             for (String broker : brokers) {
                 String[] item = broker.split(":");
@@ -219,10 +223,14 @@ public class MQClientInstance {
             && route.getTopicQueueMappingByBroker() != null
             && !route.getTopicQueueMappingByBroker().isEmpty()) {
             info.setOrderTopic(false);
+            // 这里都会对队列进行排序，先按 brokerName 排序，再按 queueId排序
+            // 如：{"brokerName":"broker-b"、"queueId":0},{{"brokerName":"broker-b"、"queueId":1}},{"brokerName":"broker-a"、"queueId":1},{"brokerName":"broker-a"、"queueId":0}
+            // 最后排序结果是 {"brokerName":"broker-a"、"queueId":0},{{"brokerName":"broker-a"、"queueId":1}},{"brokerName":"broker-b"、"queueId":0},{"brokerName":"broker-b"、"queueId":1}
             ConcurrentMap<MessageQueue, String> mqEndPoints = topicRouteData2EndpointsForStaticTopic(topic, route);
             info.getMessageQueueList().addAll(mqEndPoints.keySet());
             info.getMessageQueueList().sort((mq1, mq2) -> MixAll.compareInteger(mq1.getQueueId(), mq2.getQueueId()));
         } else {
+            // 这里都会对队列进行排序，先按 brokerName 排序，再按 queueId排序，规则如上
             List<QueueData> qds = route.getQueueDatas();
             Collections.sort(qds);
             for (QueueData qd : qds) {
@@ -793,6 +801,7 @@ public class MQClientInstance {
 
                             // Update Pub info
                             {
+                                // 内部会对 queueList 进行排序
                                 TopicPublishInfo publishInfo = topicRouteData2TopicPublishInfo(topic, topicRouteData);
                                 publishInfo.setHaveTopicRouterInfo(true);
                                 for (Entry<String, MQProducerInner> entry : this.producerTable.entrySet()) {

@@ -698,7 +698,7 @@ public class BrokerController {
         if (!result) {
             return false;
         }
-
+        // 初始化消息存储
         result = this.initializeMessageStore();
         if (!result) {
             return false;
@@ -717,6 +717,7 @@ public class BrokerController {
         }
 
         if (messageStore != null) {
+            // 注册 消息存储钩子函数，其实就是消息存储的前置处理和后置处理
             registerMessageStoreHook();
             result = this.messageStore.load();
         }
@@ -800,7 +801,7 @@ public class BrokerController {
 
     public void registerMessageStoreHook() {
         List<PutMessageHook> putMessageHookList = messageStore.getPutMessageHookList();
-
+        // 消息是否可以写入
         putMessageHookList.add(new PutMessageHook() {
             @Override
             public String hookName() {
@@ -812,7 +813,7 @@ public class BrokerController {
                 return HookUtils.checkBeforePutMessage(BrokerController.this, msg);
             }
         });
-
+        // 校验批量相关
         putMessageHookList.add(new PutMessageHook() {
             @Override
             public String hookName() {
@@ -827,7 +828,7 @@ public class BrokerController {
                 return null;
             }
         });
-
+        // 校验事务相关
         putMessageHookList.add(new PutMessageHook() {
             @Override
             public String hookName() {

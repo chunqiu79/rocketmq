@@ -55,6 +55,9 @@ public class CommitLog implements Swappable {
     public final static int MESSAGE_MAGIC_CODE = -626843481;
     protected static final Logger log = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     // End of file empty MAGIC CODE cbd43194
+    /**
+     * CommitLog文件结尾的魔数，4个字节来存储
+     */
     public final static int BLANK_MAGIC_CODE = -875286124;
     /**
      * CRC32 Format: [PROPERTY_CRC32 + NAME_VALUE_SEPARATOR + 10-digit fixed-length string + PROPERTY_SEPARATOR]
@@ -887,7 +890,7 @@ public class CommitLog implements Swappable {
             msg.setStoreTimestamp(System.currentTimeMillis());
         }
         // Set the message body CRC (consider the most appropriate setting on the client)
-        // crc校验码，防止消息内容被篡改
+        // crc校验码，防止消息内容被篡改（Cyclic Redundancy Check，循环冗余检查）
         msg.setBodyCRC(UtilAll.crc32(msg.getBody()));
         if (enabledAppendPropCRC) {
             // delete crc32 properties if exist
@@ -923,7 +926,7 @@ public class CommitLog implements Swappable {
         long elapsedTimeInLock = 0;
         // MappedFile 相当于1个 CommitLog 的内存文件
         MappedFile unlockMappedFile = null;
-        // MappedFileQueue 管理这些连续的 MappedFile 内存文件
+        // MappedFileQueue 管理这些连续的 MappedFile 内存文件（可以理解为 commitLog的文件夹）
         // 这里的 mappedFile 就是最新的 MappedFile 内存文件
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
 
@@ -932,6 +935,8 @@ public class CommitLog implements Swappable {
         if (mappedFile == null) {
             currOffset = 0;
         } else {
+            // mappedFile.getFileFromOffset() 其实就是 commitLog的文件名（全局偏移量）
+            // mappedFile.getWrotePosition() 相当于 commitLog内部的写入位置
             currOffset = mappedFile.getFileFromOffset() + mappedFile.getWrotePosition();
         }
 
@@ -955,7 +960,7 @@ public class CommitLog implements Swappable {
                 return CompletableFuture.completedFuture(new PutMessageResult(PutMessageStatus.IN_SYNC_REPLICAS_NOT_ENOUGH, null));
             }
         }
-
+        // 加锁
         topicQueueLock.lock(topicQueueKey);
         try {
 
@@ -994,6 +999,7 @@ public class CommitLog implements Swappable {
                         setFileReadMode(mappedFile, LibC.MADV_RANDOM);
                     }
                 }
+                // 可能是磁盘空间不足或权限不够导致无法创建 mappedFile
                 if (null == mappedFile) {
                     log.error("create mapped file1 error, topic: " + msg.getTopic() + " clientAddr: " + msg.getBornHostString());
                     beginTimeInLock = 0;
@@ -1002,12 +1008,12 @@ public class CommitLog implements Swappable {
                 // 将 broker 的 message 刷新到 MappedFile 内存文件中（注意：此时还没有刷盘）
                 result = mappedFile.appendMessage(msg, this.appendMessageCallback, putMessageContext);
                 switch (result.getStatus()) {
-                    // 正常返回PUT_OK
                     case PUT_OK:
+                        // 正常返回PUT_OK
                         onCommitLogAppend(msg, result, mappedFile);
                         break;
-                    // MappedFile（CommitLog） 满了不能写了，需要重新将 message 写入到一个新的 MappedFile（CommitLog） 文件中
                     case END_OF_FILE:
+                        // MappedFile（CommitLog） 满了不能写了，需要重新将 message 写入到一个新的 MappedFile（CommitLog） 文件中
                         onCommitLogAppend(msg, result, mappedFile);
                         unlockMappedFile = mappedFile;
                         // Create a new file, re-write the message
@@ -1910,7 +1916,6 @@ public class CommitLog implements Swappable {
             preEncodeBuffer.position(0);
             preEncodeBuffer.limit(msgLen);
 
-            // PHY OFFSET
             // 物理位置，消息的绝对物理位置
             // fileFromOffset ：1个 CommitLog 文件（对应1个 MappedFile文件）对应的偏移量（其实文件名就是这个偏移量）
             // byteBuffer.position() ：当前 MappedFile （对应1个 CommitLog）的写位置
@@ -1947,22 +1952,20 @@ public class CommitLog implements Swappable {
                     break;
             }
 
-            // Determines whether there is sufficient free space
-            // 确定当前 CommitLog 是否由足够的空间
+            // 确定当前 CommitLog 是否有足够的空间
             // maxBlank ：当前这个 CommitLog （MappedFile）的剩余空间
             // 1个 message 不能跨越 多个 CommitLog 文件
             // 每个 CommitLog 文件必须要确保预留8个字节来标识当前这个 CommitLog 文件结尾
             if ((msgLen + END_FILE_MIN_BLANK_LENGTH) > maxBlank) {
                 this.msgStoreItemMemory.clear();
-                // 1 TOTALSIZE
+                // 4个字节 来存储 当前这个 CommitLog （MappedFile）的剩余空间
                 this.msgStoreItemMemory.putInt(maxBlank);
-                // 2 MAGICCODE
-                // 魔数：用来标识当前 CommitLog 结尾
+                // 4个字节 来存储 魔数，用来标识 CommitLog 结尾
                 this.msgStoreItemMemory.putInt(CommitLog.BLANK_MAGIC_CODE);
                 // 3 The remaining space may be any value
                 // Here the length of the specially set maxBlank
                 final long beginTimeMills = CommitLog.this.defaultMessageStore.now();
-                // 将 message 写入到 MappedFile 中
+                // 将 message 写入到 byteBuffer 中
                 byteBuffer.put(this.msgStoreItemMemory.array(), 0, 8);
                 return new AppendMessageResult(AppendMessageStatus.END_OF_FILE, wroteOffset,
                     maxBlank, /* only wrote 8 bytes, but declare wrote maxBlank for compute write position */

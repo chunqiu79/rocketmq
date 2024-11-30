@@ -30,7 +30,9 @@ public class MQFaultStrategy {
     private LatencyFaultTolerance<String> latencyFaultTolerance;
     /**
      * 发送消息延迟容错开关（默认关闭）
-     * 其实就是为了保证高可用，如果当 broker 挂掉之后，导致找不到 队列
+     * 这个是比较悲观的做法，当消息发送者遇到一次消息发送失败后，就会悲观地认为Broker不可用。
+     * 开启，则在接下来的一段时间内就不再向其 broker 发送消息，无论是否是重试消息，直接避开该 broker。
+     * 而不开启延迟规避机制，就只会在本次消息发送的重试过程中规避该Broker，下一次消息发送还是会继续尝试
      */
     private volatile boolean sendLatencyFaultEnable;
     private volatile boolean startDetectorEnable;
@@ -45,6 +47,10 @@ public class MQFaultStrategy {
     private long[] notAvailableDuration = {0L, 0L, 2000L, 5000L, 6000L, 10000L, 30000L};
 
     public static class BrokerFilter implements QueueFilter {
+        /**
+         * lastBrokerName 表明的是 上一次选择发送消息失败的broker
+         * 第1次发送消息，这个lastBrokerName是null
+         */
         private String lastBrokerName;
 
         public void setLastBrokerName(String lastBrokerName) {
@@ -53,17 +59,14 @@ public class MQFaultStrategy {
 
         @Override public boolean filter(MessageQueue mq) {
             if (lastBrokerName != null) {
+                // 这里表明需要切换 broker
                 return !mq.getBrokerName().equals(lastBrokerName);
             }
             return true;
         }
     }
 
-    private ThreadLocal<BrokerFilter> threadBrokerFilter = new ThreadLocal<BrokerFilter>() {
-        @Override protected BrokerFilter initialValue() {
-            return new BrokerFilter();
-        }
-    };
+    private ThreadLocal<BrokerFilter> threadBrokerFilter = ThreadLocal.withInitial(BrokerFilter::new);
 
     private QueueFilter reachableFilter = new QueueFilter() {
         @Override public boolean filter(MessageQueue mq) {
@@ -153,6 +156,7 @@ public class MQFaultStrategy {
      * 通过 topic 信息返回1个存放消息的 消息队列
      */
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName, final boolean resetIndex) {
+        // 当 lastBrokerName 不为null的时候，意味着只要使用了 brokerFilter 就会切换 broker
         BrokerFilter brokerFilter = threadBrokerFilter.get();
         brokerFilter.setLastBrokerName(lastBrokerName);
         if (this.sendLatencyFaultEnable) {
@@ -160,12 +164,13 @@ public class MQFaultStrategy {
                 tpInfo.resetIndex();
             }
             // 内部使用轮询算法
-            // 当前 broker 的所有队列都不可用的时候，这个时候 mq 是 null，说明当前 broker 已经挂掉了
+            // 发送消息失败，会将 broker 的 isAvailable 设置为false，那么 availableFilter.filter 就一直是 false，mq就会返回 null
+            // 那么 在规避时间内，这个 broker 都不可用，无论是否是 重试的消息
             MessageQueue mq = tpInfo.selectOneMessageQueue(availableFilter, brokerFilter);
             if (mq != null) {
                 return mq;
             }
-            // 当前 broker 挂掉了，需要重新选择 broker
+            // 选择 1个 可达的 broker 的 queue队列
             mq = tpInfo.selectOneMessageQueue(reachableFilter, brokerFilter);
             if (mq != null) {
                 return mq;
@@ -173,7 +178,7 @@ public class MQFaultStrategy {
 
             return tpInfo.selectOneMessageQueue();
         }
-
+        // lastBrokerName不为null的话，切换 broker
         MessageQueue mq = tpInfo.selectOneMessageQueue(brokerFilter);
         if (mq != null) {
             return mq;

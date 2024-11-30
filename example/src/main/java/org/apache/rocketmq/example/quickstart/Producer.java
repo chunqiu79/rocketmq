@@ -23,7 +23,7 @@ import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 
 /**
- * This class demonstrates how to send messages to brokers using provided {@link DefaultMQProducer}.
+ * 生产者 demo
  */
 public class Producer {
 

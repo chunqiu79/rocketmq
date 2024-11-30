@@ -16,10 +16,6 @@
  */
 package org.apache.rocketmq.client;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -29,6 +25,11 @@ import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.NamespaceUtil;
 import org.apache.rocketmq.remoting.protocol.RequestType;
+
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 
 /**
  * Client Common configuration
@@ -43,6 +44,10 @@ public class ClientConfig {
     public static final String HEART_BEAT_V2 = "com.rocketmq.heartbeat.v2";
     private String namesrvAddr = NameServerAddressUtils.getNameServerAddresses();
     private String clientIP = NetworkUtil.getLocalAddress();
+    /**
+     * client 的 实例名称
+     * 默认 DEFAULT（但是其实会被修改，org.apache.rocketmq.client.ClientConfig#changeInstanceNameToPID()）
+     */
     private String instanceName = System.getProperty("rocketmq.client.name", "DEFAULT");
     private int clientCallbackExecutorThreads = Runtime.getRuntime().availableProcessors();
     @Deprecated

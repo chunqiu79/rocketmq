@@ -42,16 +42,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 
 /**
- * This class is the entry point for applications intending to send messages. </p>
- * <p>
- * It's fine to tune fields which exposes getter/setter methods, but keep in mind, all of them should work well out of
- * box for most scenarios. </p>
- * <p>
- * This class aggregates various <code>send</code> methods to deliver messages to broker(s). Each of them has pros and
- * cons; you'd better understand strengths and weakness of them before actually coding. </p>
- *
- * <p> <strong>Thread Safety:</strong> After configuring and starting process, this class can be regarded as thread-safe
- * and used among multiple threads context. </p>
+ * 消息生产者 的默认实现类
  */
 public class DefaultMQProducer extends ClientConfig implements MQProducer {
 
@@ -70,72 +61,61 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     ));
 
     /**
-     * Producer group conceptually aggregates all producer instances of exactly same role, which is particularly
-     * important when transactional messages are involved. </p>
-     * <p>
-     * For non-transactional messages, it does not matter as long as it's unique per process. </p>
-     * <p>
-     * See <a href="https://rocketmq.apache.org/docs/introduction/02concepts">core concepts</a> for more discussion.
+     * 生产者组名
      */
-    // 生产者组名
     private String producerGroup;
 
     /**
-     * Topics that need to be initialized for transaction producer
+     * 主题
      */
-    // 主题
     private List<String> topics;
 
     /**
-     * Just for testing or demo program
+     * 默认的topicKey
      */
-    //
     private String createTopicKey = TopicValidator.AUTO_CREATE_TOPIC_KEY_TOPIC;
 
     /**
-     * Number of queues to create per default topic.
+     * 单个topic 在每个broker默认分配的队列数
+     * 默认 4个
      */
-    // 每个topic默认分配的队列数
     private volatile int defaultTopicQueueNums = 4;
 
     /**
-     * Timeout for sending messages.
+     * 消息发送超时时间
+     * 默认 3秒
      */
-    // 消费发送超时时间
     private int sendMsgTimeout = 3000;
 
     /**
-     * Compress message body threshold, namely, message body larger than 4k will be compressed on default.
+     * 当消息数据达到 compressMsgBodyOverHowmuch 之后对消息进行压缩
+     * 默认 4KB
      */
-    // 当消息数据达到 compressMsgBodyOverHowmuch 之后对消息进行压缩
     private int compressMsgBodyOverHowmuch = 1024 * 4;
 
     /**
-     * Maximum number of retry to perform internally before claiming sending failure in synchronous mode. </p>
-     * <p>
-     * This may potentially cause message duplication which is up to application developers to resolve.
+     * 同步发送消息重试次数（不包含本身发送的第一次）
+     * 默认 2次，总共执行3次
      */
-    // 同步重试次数（不包含本身发送的第一次）
     private int retryTimesWhenSendFailed = 2;
 
     /**
-     * Maximum number of retry to perform internally before claiming sending failure in asynchronous mode. </p>
-     * <p>
-     * This may potentially cause message duplication which is up to application developers to resolve.
+     * 异步发送消息重试次数（不包含本身发送的第一次）
+     * 默认 2次，总共执行3次
      */
-    // 异步重试次数（不包含本身发送的第一次）
     private int retryTimesWhenSendAsyncFailed = 2;
 
     /**
-     * Indicate whether to retry another broker on sending failure internally.
+     * 消息重试时选择另外1个broker，是否不等待存储结果就返回
+     * 默认 false
      */
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
     /**
-     * Maximum allowed message body size in bytes.
+     * 允许发送的最大消息长度
+     * 默认 4MB
      */
-    // 最大消息大小为 maxMessageSize
-    private int maxMessageSize = 1024 * 1024 * 4; // 4M
+    private int maxMessageSize = 1024 * 1024 * 4;
 
     /**
      * Interface of asynchronous transfer data

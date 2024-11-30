@@ -16,17 +16,23 @@
  */
 package org.apache.rocketmq.broker.mqtrace;
 
-import java.util.Properties;
-
 import org.apache.rocketmq.common.message.MessageType;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+import java.util.Properties;
+
 public class SendMessageContext {
-    /** namespace */
+    /**
+     * 命名空间
+     */
     private String namespace;
-    /** producer group without namespace. */
+    /**
+     * 生产者组名
+     */
     private String producerGroup;
-    /** topic without namespace. */
+    /**
+     * topic主题名称
+     */
     private String topic;
     private String msgId;
     private String originMsgId;

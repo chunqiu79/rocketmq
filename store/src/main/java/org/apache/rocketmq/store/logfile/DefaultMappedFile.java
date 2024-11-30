@@ -53,37 +53,84 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+/**
+ * CommitLog 对应的内存映射文件
+ */
 public class DefaultMappedFile extends AbstractMappedFile {
+    /**
+     * 操作系统每页大小，默认4KB
+     */
     public static final int OS_PAGE_SIZE = 1024 * 4;
     public static final Unsafe UNSAFE = getUnsafe();
     private static final Method IS_LOADED_METHOD;
     public static final int UNSAFE_PAGE_SIZE = UNSAFE == null ? OS_PAGE_SIZE : UNSAFE.pageSize();
 
     protected static final Logger log = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
-
+    /**
+     * 当前JVM实例中MappedFile的虚拟内存
+     */
     protected static final AtomicLong TOTAL_MAPPED_VIRTUAL_MEMORY = new AtomicLong(0);
-
+    /**
+     * 当前JVM实例中MappedFile对象个数
+     */
     protected static final AtomicInteger TOTAL_MAPPED_FILES = new AtomicInteger(0);
 
     protected static final AtomicIntegerFieldUpdater<DefaultMappedFile> WROTE_POSITION_UPDATER;
     protected static final AtomicIntegerFieldUpdater<DefaultMappedFile> COMMITTED_POSITION_UPDATER;
     protected static final AtomicIntegerFieldUpdater<DefaultMappedFile> FLUSHED_POSITION_UPDATER;
-
+    /**
+     * 当前文件的写指针，从0开始（内存映射文件中的写指针）
+     */
     protected volatile int wrotePosition;
+    /**
+     * 当前文件的提交指针，如果开启transientStore-PoolEnable，则数据会存储在TransientStorePool中，然后提交到内存映射ByteBuffer中，再写入磁盘
+     */
     protected volatile int committedPosition;
+    /**
+     * 将该指针之前的数据持久化存储到磁盘中
+     */
     protected volatile int flushedPosition;
+    /**
+     * 文件大小
+     */
     protected int fileSize;
+    /**
+     * 文件通道
+     */
     protected FileChannel fileChannel;
     /**
-     * Message will put to here first, and then reput to FileChannel if writeBuffer is not null.
+     * 堆外内存ByteBuffer，如果不为空，数据首先将存储在该Buffer中，然后提交到MappedFile创建的FileChannel中。
+     * transientStorePoolEnable为true时不为空
      */
     protected ByteBuffer writeBuffer = null;
+    /**
+     * 堆外内存池，该内存池中的内存会提供内存锁机制。
+     * transientStorePoolEnable为true时启用
+     */
     protected TransientStorePool transientStorePool = null;
+    /**
+     * 文件名字
+     */
     protected String fileName;
+    /**
+     * 该文件的初始偏移量
+     */
     protected long fileFromOffset;
+    /**
+     * 物理文件
+     */
     protected File file;
+    /**
+     * 物理文件对应的内存映射Buffer
+     */
     protected MappedByteBuffer mappedByteBuffer;
+    /**
+     * 文件最后一次写入内容的时间
+     */
     protected volatile long storeTimestamp = 0;
+    /**
+     * 是否是MappedFileQueue队列中第一个文件
+     */
     protected boolean firstCreateInQueue = false;
     private long lastFlushTime = -1L;
 
@@ -149,10 +196,14 @@ public class DefaultMappedFile extends AbstractMappedFile {
         this.transientStorePool = transientStorePool;
     }
 
+    /**
+     * 初始化
+     */
     private void init(final String fileName, final int fileSize) throws IOException {
         this.fileName = fileName;
         this.fileSize = fileSize;
         this.file = new File(fileName);
+        // 设置 fileFromOffset 为文件名
         this.fileFromOffset = Long.parseLong(this.file.getName());
         boolean ok = false;
 
@@ -360,7 +411,7 @@ public class DefaultMappedFile extends AbstractMappedFile {
     }
 
     /**
-     * @return The current flushed position
+     * 刷盘，刷盘指的是将内存中的数据写入磁盘，永久存储在磁盘中
      */
     @Override
     public int flush(final int flushLeastPages) {
@@ -392,10 +443,14 @@ public class DefaultMappedFile extends AbstractMappedFile {
         return this.getFlushedPosition();
     }
 
+    /**
+     * 内存映射文件的提交
+     * commitLeastPages 为本次提交的最小页数
+     */
     @Override
     public int commit(final int commitLeastPages) {
         if (writeBuffer == null) {
-            //no need to commit data to file channel, so just regard wrotePosition as committedPosition.
+            // writeBuffer 为空，则直接返回 wrotePosition，说明 commit操作需要用到 writeBuffer
             return WROTE_POSITION_UPDATER.get(this);
         }
 
@@ -403,6 +458,8 @@ public class DefaultMappedFile extends AbstractMappedFile {
         if (transientStorePool != null && !transientStorePool.isRealCommit()) {
             COMMITTED_POSITION_UPDATER.set(this, WROTE_POSITION_UPDATER.get(this));
         } else if (this.isAbleToCommit(commitLeastPages)) {
+            // 待提交数据满足 commitLeastPages 相关条件，才执行本次提交操作
+
             if (this.hold()) {
                 commit0();
                 this.release();
@@ -421,16 +478,21 @@ public class DefaultMappedFile extends AbstractMappedFile {
     }
 
     protected void commit0() {
+        // 当前writeBuffer 的 写指针
         int writePos = WROTE_POSITION_UPDATER.get(this);
+        // 提交过 的 commit指针
         int lastCommittedPosition = COMMITTED_POSITION_UPDATER.get(this);
-
+        // writePos - lastCommittedPosition > 0 表明有新的数据写入
         if (writePos - lastCommittedPosition > 0) {
             try {
                 ByteBuffer byteBuffer = writeBuffer.slice();
                 byteBuffer.position(lastCommittedPosition);
                 byteBuffer.limit(writePos);
+                // 把committedPosition到wrotePosition的数据复制（写入）到FileChannel中
                 this.fileChannel.position(lastCommittedPosition);
                 this.fileChannel.write(byteBuffer);
+                // 更新 提交过的 commit指针，将其设置为 当前writeBuffer 的 写指针的位置
+                // 下次提交时，将从这次的 writeBuffer 的 写指针的位置 开始
                 COMMITTED_POSITION_UPDATER.set(this, writePos);
             } catch (Throwable e) {
                 log.error("Error occurred when commit data to FileChannel.", e);
@@ -454,17 +516,22 @@ public class DefaultMappedFile extends AbstractMappedFile {
     }
 
     protected boolean isAbleToCommit(final int commitLeastPages) {
+        // 提交过 的 commit指针
         int commit = COMMITTED_POSITION_UPDATER.get(this);
+        // 当前writeBuffer 的 写指针
         int write = WROTE_POSITION_UPDATER.get(this);
 
         if (this.isFull()) {
+            // 文件满了
             return true;
         }
 
         if (commitLeastPages > 0) {
+            // (write - commit) 就是未提交的数据
+            // (write - commit) / OS_PAGE_SIZE 就是未提交的脏页数量
             return ((write / OS_PAGE_SIZE) - (commit / OS_PAGE_SIZE)) >= commitLeastPages;
         }
-
+        // 如果 commitLeastPages <= 0 ，走这个逻辑，表示只要有脏页就提交
         return write > commit;
     }
 

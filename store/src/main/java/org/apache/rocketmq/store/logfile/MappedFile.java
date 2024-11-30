@@ -16,22 +16,21 @@
  */
 package org.apache.rocketmq.store.logfile;
 
+import org.apache.rocketmq.common.message.MessageExtBatch;
+import org.apache.rocketmq.common.message.MessageExtBrokerInner;
+import org.apache.rocketmq.store.*;
+import org.apache.rocketmq.store.config.FlushDiskType;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Iterator;
-import org.apache.rocketmq.common.message.MessageExtBatch;
-import org.apache.rocketmq.common.message.MessageExtBrokerInner;
-import org.apache.rocketmq.store.AppendMessageCallback;
-import org.apache.rocketmq.store.AppendMessageResult;
-import org.apache.rocketmq.store.CompactionAppendMsgCallback;
-import org.apache.rocketmq.store.PutMessageContext;
-import org.apache.rocketmq.store.SelectMappedBufferResult;
-import org.apache.rocketmq.store.TransientStorePool;
-import org.apache.rocketmq.store.config.FlushDiskType;
 
+/**
+ * CommitLog 对应的内存映射文件
+ */
 public interface MappedFile {
     /**
      * Returns the file name of the {@code MappedFile}.

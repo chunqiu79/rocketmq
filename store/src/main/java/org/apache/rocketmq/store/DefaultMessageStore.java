@@ -77,32 +77,52 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+/**
+ * 消息存储类
+ */
 public class DefaultMessageStore implements MessageStore {
     protected static final Logger LOGGER = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     protected static final Logger ERROR_LOG = LoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
 
     public final PerfCounter.Ticks perfs = new PerfCounter.Ticks(LOGGER);
-
+    /**
+     * 消息存储配置属性
+     */
     private final MessageStoreConfig messageStoreConfig;
-    // CommitLog
+    /**
+     * commitLog文件的存储实现类
+     */
     protected final CommitLog commitLog;
 
     protected final ConsumeQueueStoreInterface consumeQueueStore;
-
+    /**
+     * consumeQueue文件刷盘线程
+     */
     private final FlushConsumeQueueService flushConsumeQueueService;
-
+    /**
+     * 清除commitLog文件服务
+     */
     protected final CleanCommitLogService cleanCommitLogService;
 
     private final CleanConsumeQueueService cleanConsumeQueueService;
 
     private final CorrectLogicOffsetService correctLogicOffsetService;
-
+    /**
+     * index文件实现类
+     */
     protected final IndexService indexService;
-
+    /**
+     * mappedFile分配服务
+     */
     private final AllocateMappedFileService allocateMappedFileService;
-
+    /**
+     * commitLog消息分发，根据CommitLog文件构建ConsumeQueue、Index文件
+     */
     private ReputMessageService reputMessageService;
-
+    /**
+     * 存储高可用机制
+     * ha: high available
+     */
     private HAService haService;
 
     // CompactionLog
@@ -111,7 +131,9 @@ public class DefaultMessageStore implements MessageStore {
     private CompactionService compactionService;
 
     private final StoreStatsService storeStatsService;
-
+    /**
+     * 消息堆内存缓存
+     */
     private final TransientStorePool transientStorePool;
 
     protected final RunningFlags runningFlags = new RunningFlags();
@@ -119,15 +141,25 @@ public class DefaultMessageStore implements MessageStore {
 
     private final ScheduledExecutorService scheduledExecutorService;
     private final BrokerStatsManager brokerStatsManager;
+    /**
+     * 在消息拉取长轮询模式下的消息达到监听器
+     */
     private final MessageArrivingListener messageArrivingListener;
+    /**
+     * broker配置属性
+     */
     private final BrokerConfig brokerConfig;
 
     private volatile boolean shutdown = true;
     protected boolean notifyMessageArriveInBatch = false;
-
+    /**
+     * 文件刷盘检测点
+     */
     private StoreCheckpoint storeCheckpoint;
     private TimerMessageStore timerMessageStore;
-
+    /**
+     * commitLog文件转发请求
+     */
     private final LinkedList<CommitLogDispatcher> dispatcherList;
 
     private RandomAccessFile lockFile;
@@ -529,20 +561,20 @@ public class DefaultMessageStore implements MessageStore {
 
     @Override
     public CompletableFuture<PutMessageResult> asyncPutMessage(MessageExtBrokerInner msg) {
-
+        // 存储消息的前置处理
+        // org.apache.rocketmq.broker.BrokerController#registerMessageStoreHook
         for (PutMessageHook putMessageHook : putMessageHookList) {
             PutMessageResult handleResult = putMessageHook.executeBeforePutMessage(msg);
             if (handleResult != null) {
                 return CompletableFuture.completedFuture(handleResult);
             }
         }
-
+        // 感觉这里代码多余了，重复校验
         if (msg.getProperties().containsKey(MessageConst.PROPERTY_INNER_NUM)
             && !MessageSysFlag.check(msg.getSysFlag(), MessageSysFlag.INNER_BATCH_FLAG)) {
             LOGGER.warn("[BUG]The message had property {} but is not an inner batch", MessageConst.PROPERTY_INNER_NUM);
             return CompletableFuture.completedFuture(new PutMessageResult(PutMessageStatus.MESSAGE_ILLEGAL, null));
         }
-
         if (MessageSysFlag.check(msg.getSysFlag(), MessageSysFlag.INNER_BATCH_FLAG)) {
             Optional<TopicConfig> topicConfig = this.getTopicConfig(msg.getTopic());
             if (!QueueTypeUtils.isBatchCq(topicConfig)) {
@@ -598,6 +630,9 @@ public class DefaultMessageStore implements MessageStore {
         return putResultFuture;
     }
 
+    /**
+     * 消息存储入口
+     */
     @Override
     public PutMessageResult putMessage(MessageExtBrokerInner msg) {
         return waitForPutResult(asyncPutMessage(msg));

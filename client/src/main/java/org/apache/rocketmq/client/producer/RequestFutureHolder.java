@@ -17,23 +17,18 @@
 
 package org.apache.rocketmq.client.producer;
 
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
 import org.apache.rocketmq.client.common.ClientErrorCode;
 import org.apache.rocketmq.client.exception.RequestTimeoutException;
 import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
 import org.apache.rocketmq.common.ThreadFactoryImpl;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class RequestFutureHolder {
     private static final Logger log = LoggerFactory.getLogger(RequestFutureHolder.class);
@@ -76,14 +71,11 @@ public class RequestFutureHolder {
         if (null == scheduledExecutorService) {
             this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("RequestHouseKeepingService"));
 
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        RequestFutureHolder.getInstance().scanExpiredRequest();
-                    } catch (Throwable e) {
-                        log.error("scan RequestFutureTable exception", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    RequestFutureHolder.getInstance().scanExpiredRequest();
+                } catch (Throwable e) {
+                    log.error("scan RequestFutureTable exception", e);
                 }
             }, 1000 * 3, 1000, TimeUnit.MILLISECONDS);
 

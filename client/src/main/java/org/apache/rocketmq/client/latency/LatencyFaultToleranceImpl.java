@@ -27,7 +27,9 @@ import java.util.concurrent.*;
 public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> {
     private final static Logger log = LoggerFactory.getLogger(MQFaultStrategy.class);
     /**
-     * 缓存 broker的故障信息 key：brokerName value：对应的故障信息
+     * 缓存 broker的故障信息
+     * key：brokerName
+     * value：对应的故障信息
      */
     private final ConcurrentHashMap<String, FaultItem> faultItemTable = new ConcurrentHashMap<String, FaultItem>(16);
     private int detectTimeout = 200;
@@ -77,16 +79,13 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
     }
 
     public void startDetector() {
-        this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (startDetectorEnable) {
-                        detectByOneRound();
-                    }
-                } catch (Exception e) {
-                    log.warn("Unexpected exception raised while detecting service reachability", e);
+        this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+            try {
+                if (startDetectorEnable) {
+                    detectByOneRound();
                 }
+            } catch (Exception e) {
+                log.warn("Unexpected exception raised while detecting service reachability", e);
             }
         }, 3, 3, TimeUnit.SECONDS);
     }
@@ -185,8 +184,17 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
     }
 
     public class FaultItem implements Comparable<FaultItem> {
+        /**
+         * broker名字
+         */
         private final String name;
+        /**
+         * 本次消息发送的延迟时间
+         */
         private volatile long currentLatency;
+        /**
+         * 故障规避的开始时间，理解为 broker开始可用时间感觉更好
+         */
         private volatile long startTimestamp;
         private volatile long checkStamp;
         private volatile boolean reachableFlag;
@@ -197,6 +205,7 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
 
         public void updateNotAvailableDuration(long notAvailableDuration) {
             if (notAvailableDuration > 0 && System.currentTimeMillis() + notAvailableDuration > this.startTimestamp) {
+                // 将 开始可用时间 设置为 当前时间 + 不用时间
                 this.startTimestamp = System.currentTimeMillis() + notAvailableDuration;
                 log.info(name + " will be isolated for " + notAvailableDuration + " ms.");
             }
@@ -236,6 +245,9 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
             this.checkStamp = checkStamp;
         }
 
+        /**
+         * 是否可用，当前时间 >= 开始可用时间
+         */
         public boolean isAvailable() {
             return System.currentTimeMillis() >= startTimestamp;
         }

@@ -16,18 +16,22 @@
  */
 package org.apache.rocketmq.store.config;
 
-import java.io.File;
-
 import org.apache.rocketmq.common.annotation.ImportantField;
 import org.apache.rocketmq.store.ConsumeQueue;
 import org.apache.rocketmq.store.StoreType;
 import org.apache.rocketmq.store.queue.BatchConsumeQueue;
+
+import java.io.File;
 
 public class MessageStoreConfig {
 
     public static final String MULTI_PATH_SPLITTER = System.getProperty("rocketmq.broker.multiPathSplitter", ",");
 
     //The root directory in which the log data is kept
+    /**
+     * store的存储地址
+     * CommitLog、config、ConsumeQueue、Index、checkpoint等存储在其下一级目录
+     */
     @ImportantField
     private String storePathRootDir = System.getProperty("user.home") + File.separator + "store";
 
@@ -48,6 +52,9 @@ public class MessageStoreConfig {
     private String readOnlyCommitLogStorePaths = null;
 
     // CommitLog file size,default is 1G
+    /**
+     * 每个 commitLog默认大小 1GB
+     */
     private int mappedFileSizeCommitLog = 1024 * 1024 * 1024;
 
     // CompactinLog file size, default is 100M

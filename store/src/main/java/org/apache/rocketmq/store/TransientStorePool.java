@@ -18,20 +18,33 @@ package org.apache.rocketmq.store;
 
 import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
-import java.nio.ByteBuffer;
-import java.util.Deque;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.store.util.LibC;
 import sun.nio.ch.DirectBuffer;
 
+import java.nio.ByteBuffer;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
+
+/**
+ * 短暂的存储池
+ * rocketmq 单独创建1个DirectByteBuffer内存缓存池，用来临时存储数据
+ */
 public class TransientStorePool {
     private static final Logger log = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
-
+    /**
+     * availableBuffers个数，可在 broker配置文件中通过transientStorePoolSize进行设置，默认为5
+     */
     private final int poolSize;
+    /**
+     * 每个ByteBuffer的大小，默认为mappedFileSizeCommitLog，表明TransientStorePool为CommitLog文件服务
+     */
     private final int fileSize;
+    /**
+     * ByteBuffer容器，双端队列
+     */
     private final Deque<ByteBuffer> availableBuffers;
     private volatile boolean isRealCommit = true;
 
@@ -50,6 +63,7 @@ public class TransientStorePool {
 
             final long address = ((DirectBuffer) byteBuffer).address();
             Pointer pointer = new Pointer(address);
+            // 通过 com.sun.jna.Library 锁定内存，避免被置换到交换区
             LibC.INSTANCE.mlock(pointer, new NativeLong(fileSize));
 
             availableBuffers.offer(byteBuffer);

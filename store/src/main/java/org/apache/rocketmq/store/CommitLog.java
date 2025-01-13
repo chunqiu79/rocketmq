@@ -1332,6 +1332,10 @@ public class CommitLog implements Swappable {
         return -1;
     }
 
+    /**
+     * 获取当前CommitLog目录的最小偏移量，首先获取目录下的第一个文件，如果该文件可用，则返回该文件的起始偏移量，
+     * 否则返回下一个文件的起始偏移量
+     */
     public long getMinOffset() {
         MappedFile mappedFile = this.mappedFileQueue.getFirstMappedFile();
         if (mappedFile != null) {
@@ -1345,11 +1349,19 @@ public class CommitLog implements Swappable {
         return -1;
     }
 
+    /**
+     * 根据偏移量与消息长度查找消息。
+     * 首先根据偏移找到文件所在的物理偏移量，然后用offset与文件长度取余，得到在文件内的偏移量，从该偏移量读取size长度的内容并返回。
+     * 如果只根据消息偏移量查找消息，则首先找到文件内的偏移量，然后尝试读取4字节，获取消息的实际长度，最后读取指定字节
+     */
     public SelectMappedBufferResult getMessage(final long offset, final int size) {
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMappedFileSizeCommitLog();
+        // 根据 offset 得到具体的CommitLog文件
         MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset, offset == 0);
         if (mappedFile != null) {
+            // CommitLog文件内的偏移量
             int pos = (int) (offset % mappedFileSize);
+            // 从 pos 开始，从 CommitLog文件中读取 size 大小的数据
             SelectMappedBufferResult selectMappedBufferResult = mappedFile.selectMappedBuffer(pos, size);
             if (null != selectMappedBufferResult) {
                 selectMappedBufferResult.setInCache(coldDataCheckService.isDataInPageCache(offset));
@@ -1359,6 +1371,16 @@ public class CommitLog implements Swappable {
         return null;
     }
 
+    /**
+     * 根据offset返回下一个文件的起始偏移量。
+     * 获取一个文件的大小，减去offset % mappedFileSize，回到下一文件的起始偏移量
+     * offset % mappedFileSize：它计算了 offset 在当前文件中的位置，即当前偏移量在当前文件中的偏移量。
+     * 例如，如果文件大小是 4KB，offset 是 7KB，那么 offset % 4KB 就是 3KB
+     * mappedFileSize - offset % mappedFileSize：通过减去当前偏移量在文件中的位置，得到从当前 offset 到下一个文件起始位置的距离。
+     * 换句话说，它计算了当前文件剩余的空间
+     * offset + mappedFileSize - offset % mappedFileSize：最终，计算的是当前 offset 所在文件的下一个文件的起始位置。
+     * 也就是说，这个表达式把当前的偏移量移动到下一个文件的起始位置
+     */
     public long rollNextFile(final long offset) {
         int mappedFileSize = this.defaultMessageStore.getMessageStoreConfig().getMappedFileSizeCommitLog();
         return offset + mappedFileSize - offset % mappedFileSize;

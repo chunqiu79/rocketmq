@@ -16,11 +16,6 @@
  */
 package org.apache.rocketmq.store;
 
-import java.io.File;
-import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.common.MixAll;
@@ -34,13 +29,22 @@ import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 import org.apache.rocketmq.store.logfile.MappedFile;
-import org.apache.rocketmq.store.queue.ConsumeQueueInterface;
-import org.apache.rocketmq.store.queue.CqUnit;
-import org.apache.rocketmq.store.queue.FileQueueLifeCycle;
-import org.apache.rocketmq.store.queue.MultiDispatchUtils;
-import org.apache.rocketmq.store.queue.QueueOffsetOperator;
-import org.apache.rocketmq.store.queue.ReferredIterator;
+import org.apache.rocketmq.store.queue.*;
 
+import java.io.File;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 单个ConsumeQueue文件中默认包含30万个条目，单个文件的长度
+ * 为3×106×20字节，单个ConsumeQueue文件可以看作一个ConsumeQueue
+ * 条目的数组，其下标为ConsumeQueue的逻辑偏移量，消息消费进度存
+ * 储的偏移量即逻辑偏移量。ConsumeQueue即为CommitLog文件的索引文
+ * 件，其构建机制是当消息到达CommitLog文件后，由专门的线程产生消
+ * 息转发任务，从而构建ConsumeQueue文件
+ */
 public class ConsumeQueue implements ConsumeQueueInterface, FileQueueLifeCycle {
     private static final Logger log = LoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
@@ -210,6 +214,9 @@ public class ConsumeQueue implements ConsumeQueueInterface, FileQueueLifeCycle {
         return binarySearchInQueueByTime(mappedFile, timestamp, BoundaryType.LOWER);
     }
 
+    /**
+     * 根据时间戳定位到物理文件，就是从第一个文件开始，找到第一个文件更新时间大于该时间戳的文件
+     */
     @Override
     public long getOffsetInQueueByTime(final long timestamp, final BoundaryType boundaryType) {
         MappedFile mappedFile = this.mappedFileQueue.getConsumeQueueMappedFileByTime(timestamp,
@@ -221,15 +228,18 @@ public class ConsumeQueue implements ConsumeQueueInterface, FileQueueLifeCycle {
         BoundaryType boundaryType) {
         if (mappedFile != null) {
             long offset = 0;
+            // 最低查找偏移量
             int low = minLogicOffset > mappedFile.getFileFromOffset() ? (int) (minLogicOffset - mappedFile.getFileFromOffset()) : 0;
             int high = 0;
             int midOffset = -1, targetOffset = -1, leftOffset = -1, rightOffset = -1;
+            // 消息存储中最小的物理偏移量
             long minPhysicOffset = this.messageStore.getMinPhyOffset();
             int range = mappedFile.getFileSize();
             if (mappedFile.getWrotePosition() != 0 && mappedFile.getWrotePosition() != mappedFile.getFileSize()) {
                 // mappedFile is the last one and is currently being written.
                 range = mappedFile.getWrotePosition();
             }
+            // 文件中的数据
             SelectMappedBufferResult sbr = mappedFile.selectMappedBuffer(0, range);
             if (null != sbr) {
                 ByteBuffer byteBuffer = sbr.getByteBuffer();
@@ -850,6 +860,13 @@ public class ConsumeQueue implements ConsumeQueueInterface, FileQueueLifeCycle {
         }
     }
 
+    /**
+     * 根据startIndex获取消息消费队列条目。
+     * 通过startIndex×20得到在ConsumeQueue文件的物理偏移量，
+     * 如果该偏移量小于minLogicOffset，则返回null，说明该消息已被删除，
+     * 如果大于minLogicOffset，则根据偏移量定位到具体的物理文件。通过将该偏移量与物理文件的大小取模获取在该文件的偏移量，
+     * 从偏移量开始连续读取20个字节即可
+     */
     public SelectMappedBufferResult getIndexBuffer(final long startIndex) {
         int mappedFileSize = this.mappedFileSize;
         long offset = startIndex * CQ_STORE_UNIT_SIZE;

@@ -615,6 +615,10 @@ public class DefaultMappedFile extends AbstractMappedFile {
         return true;
     }
 
+    /**
+     * MappedFile文件销毁
+     * intervalForcibly 拒绝被销毁的最大存活时间
+     */
     @Override
     public boolean destroy(final long intervalForcibly) {
         this.shutdown(intervalForcibly);
